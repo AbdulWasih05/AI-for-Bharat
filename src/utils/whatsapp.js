@@ -1,0 +1,226 @@
+/**
+ * Nirman Mitra — WhatsApp Business API Client
+ * Sends text, image, audio, document messages via Meta Cloud API.
+ * In demo mode: logs to console instead of calling real API.
+ */
+
+import axios from 'axios';
+import config, { isDemoMode } from './config.js';
+
+const API_BASE = config.whatsapp.apiBaseUrl;
+const PHONE_NUMBER_ID = config.whatsapp.phoneNumberId;
+const API_TOKEN = config.whatsapp.apiToken;
+
+/** True when no real WhatsApp token is configured */
+function noWhatsAppToken() {
+  return !API_TOKEN || API_TOKEN === 'placeholder' || API_TOKEN.trim() === '';
+}
+
+/** Build WhatsApp API URL */
+function apiUrl(path = 'messages') {
+  return `${API_BASE}/${PHONE_NUMBER_ID}/${path}`;
+}
+
+/** Common headers for WhatsApp API */
+function headers() {
+  return {
+    Authorization: `Bearer ${API_TOKEN}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+/**
+ * Send a text message via WhatsApp
+ * @param {string} phoneNumber - Recipient phone (international format, no +)
+ * @param {string} text - Message body
+ */
+export async function sendTextMessage(phoneNumber, text) {
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: phoneNumber,
+    type: 'text',
+    text: { body: text },
+  };
+
+  if (isDemoMode() || noWhatsAppToken()) {
+    console.log(`[WhatsApp STUB] Text → ${phoneNumber}: ${text}`);
+    return { success: true, demo: true, messageId: `demo-${Date.now()}` };
+  }
+
+  const response = await axios.post(apiUrl(), payload, { headers: headers() });
+  return { success: true, messageId: response.data.messages?.[0]?.id };
+}
+
+/**
+ * Send an audio message via WhatsApp
+ * @param {string} phoneNumber
+ * @param {string} audioUrl - Public URL or pre-signed S3 URL to audio file
+ */
+export async function sendAudioMessage(phoneNumber, audioUrl) {
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: phoneNumber,
+    type: 'audio',
+    audio: { link: audioUrl },
+  };
+
+  if (isDemoMode() || noWhatsAppToken()) {
+    console.log(`[WhatsApp STUB] Audio → ${phoneNumber}: ${audioUrl}`);
+    return { success: true, demo: true, messageId: `demo-${Date.now()}` };
+  }
+
+  const response = await axios.post(apiUrl(), payload, { headers: headers() });
+  return { success: true, messageId: response.data.messages?.[0]?.id };
+}
+
+/**
+ * Send an image message via WhatsApp
+ * @param {string} phoneNumber
+ * @param {string} imageUrl - Public URL or pre-signed S3 URL
+ * @param {string} [caption] - Optional image caption
+ */
+export async function sendImageMessage(phoneNumber, imageUrl, caption) {
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: phoneNumber,
+    type: 'image',
+    image: { link: imageUrl, ...(caption && { caption }) },
+  };
+
+  if (isDemoMode() || noWhatsAppToken()) {
+    console.log(`[WhatsApp STUB] Image → ${phoneNumber}: ${imageUrl}`);
+    return { success: true, demo: true, messageId: `demo-${Date.now()}` };
+  }
+
+  const response = await axios.post(apiUrl(), payload, { headers: headers() });
+  return { success: true, messageId: response.data.messages?.[0]?.id };
+}
+
+/**
+ * Send a document message via WhatsApp (used for certificates)
+ * @param {string} phoneNumber
+ * @param {string} docUrl
+ * @param {string} filename
+ * @param {string} [caption]
+ */
+export async function sendDocumentMessage(phoneNumber, docUrl, filename, caption) {
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: phoneNumber,
+    type: 'document',
+    document: {
+      link: docUrl,
+      filename,
+      ...(caption && { caption }),
+    },
+  };
+
+  if (isDemoMode() || noWhatsAppToken()) {
+    console.log(`[WhatsApp STUB] Document → ${phoneNumber}: ${filename} (${docUrl})`);
+    return { success: true, demo: true, messageId: `demo-${Date.now()}` };
+  }
+
+  const response = await axios.post(apiUrl(), payload, { headers: headers() });
+  return { success: true, messageId: response.data.messages?.[0]?.id };
+}
+
+/**
+ * Download media from WhatsApp by media ID
+ * Used when workers send images/audio — fetch the binary content.
+ * @param {string} mediaId - WhatsApp media ID from webhook payload
+ * @returns {Promise<{ buffer: Buffer, contentType: string }>}
+ */
+export async function downloadMedia(mediaId) {
+  if (isDemoMode() || noWhatsAppToken()) {
+    console.log(`[WhatsApp STUB] Download media: ${mediaId}`);
+    // Return a tiny placeholder buffer in demo mode
+    return {
+      buffer: Buffer.from('demo-media-placeholder'),
+      contentType: 'application/octet-stream',
+    };
+  }
+
+  // Step 1: Get media URL from WhatsApp
+  const mediaInfo = await axios.get(`${API_BASE}/${mediaId}`, { headers: headers() });
+  const mediaUrl = mediaInfo.data.url;
+
+  // Step 2: Download the actual media binary
+  const mediaResponse = await axios.get(mediaUrl, {
+    headers: headers(),
+    responseType: 'arraybuffer',
+  });
+
+  return {
+    buffer: Buffer.from(mediaResponse.data),
+    contentType: mediaResponse.headers['content-type'] || 'application/octet-stream',
+  };
+}
+
+/**
+ * Parse incoming WhatsApp webhook payload
+ * Extracts the essential fields from Meta's nested structure.
+ * @param {object} body - Raw POST body from webhook
+ * @returns {object|null} Parsed message or null if not a valid message
+ */
+export function parseWebhookMessage(body) {
+  try {
+    const entry = body?.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+
+    if (!value?.messages?.length) return null;
+
+    const message = value.messages[0];
+    const contact = value.contacts?.[0];
+
+    const parsed = {
+      messageId: message.id,
+      from: message.from, // phone number in international format
+      timestamp: message.timestamp,
+      type: message.type, // text, image, audio, location, document
+      contactName: contact?.profile?.name || 'Unknown',
+    };
+
+    // Extract type-specific content
+    switch (message.type) {
+      case 'text':
+        parsed.text = message.text?.body || '';
+        break;
+      case 'image':
+        parsed.mediaId = message.image?.id;
+        parsed.mimeType = message.image?.mime_type;
+        parsed.caption = message.image?.caption;
+        break;
+      case 'audio':
+        parsed.mediaId = message.audio?.id;
+        parsed.mimeType = message.audio?.mime_type;
+        parsed.isVoiceNote = message.audio?.voice || false;
+        break;
+      case 'location':
+        parsed.latitude = message.location?.latitude;
+        parsed.longitude = message.location?.longitude;
+        break;
+      case 'document':
+        parsed.mediaId = message.document?.id;
+        parsed.mimeType = message.document?.mime_type;
+        parsed.filename = message.document?.filename;
+        break;
+      default:
+        parsed.raw = message;
+    }
+
+    return parsed;
+  } catch (err) {
+    console.error('Failed to parse WhatsApp webhook:', err.message);
+    return null;
+  }
+}
+
+export default {
+  sendTextMessage,
+  sendAudioMessage,
+  sendImageMessage,
+  sendDocumentMessage,
+  downloadMedia,
+  parseWebhookMessage,
+};
