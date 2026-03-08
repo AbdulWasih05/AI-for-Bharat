@@ -51,6 +51,18 @@ export const handler = async (event) => {
       return await verifyCertificate(event);
     }
 
+    if (path.includes('/api/admin/attendance-trends')) {
+      return await getAttendanceTrends();
+    }
+
+    if (path.includes('/api/admin/confidence-stats')) {
+      return await getConfidenceStats();
+    }
+
+    if (path.includes('/api/admin/site-breakdown')) {
+      return await getSiteBreakdown();
+    }
+
     return apiResponse(404, { error: 'Route not found' });
   } catch (err) {
     console.error('AdminAPI error:', err);
@@ -64,9 +76,11 @@ export const handler = async (event) => {
 
 async function getDashboardStats() {
   // Get counts from each table
-  const [workers, pendingReviews] = await Promise.all([
+  const [workers, pendingReviews, allLogs, allSites] = await Promise.all([
     scanTable(config.tables.workers, { Select: 'COUNT' }),
     getPendingReviews(100),
+    scanTable(config.tables.attendance),
+    scanTable(config.tables.sites),
   ]);
 
   // Aggregate worker stats
@@ -74,6 +88,49 @@ async function getDashboardStats() {
   const activeWorkers = allWorkers.filter((w) => w.profile_status === 'active');
   const onboardingWorkers = allWorkers.filter((w) => w.profile_status === 'onboarding');
   const totalDaysLogged = activeWorkers.reduce((sum, w) => sum + (w.total_days_logged || 0), 0);
+
+  // Attendance trends (last 7 days)
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const trends = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const count = allLogs.filter((l) => l.log_date === dateStr).length;
+    trends.push({ day: dayNames[d.getDay()], date: dateStr, logs: count });
+  }
+
+  // Confidence distribution
+  let autoApproved = 0;
+  let pendingCount = 0;
+  let rejectedCount = 0;
+  for (const log of allLogs) {
+    const status = log.verification_status;
+    if (status === 'auto_approved' || status === 'approved') autoApproved++;
+    else if (status === 'pending_review') pendingCount++;
+    else if (status === 'rejected') rejectedCount++;
+  }
+  const total = autoApproved + pendingCount + rejectedCount || 1;
+  const distribution = [
+    { name: 'Auto-Approved (>=80%)', value: Math.round((autoApproved / total) * 100), color: '#22c55e' },
+    { name: 'Pending Review (60-80%)', value: Math.round((pendingCount / total) * 100), color: '#f59e0b' },
+    { name: 'Rejected (<60%)', value: Math.round((rejectedCount / total) * 100), color: '#ef4444' },
+  ];
+
+  // Site breakdown
+  const siteNames = {};
+  for (const site of allSites) {
+    siteNames[site.site_id] = site.site_name || site.name || site.site_id;
+  }
+  const siteCounts = {};
+  for (const log of allLogs) {
+    const sid = log.site_id || 'unknown';
+    const name = siteNames[sid] || sid;
+    siteCounts[name] = (siteCounts[name] || 0) + 1;
+  }
+  const sites = Object.entries(siteCounts)
+    .map(([name, count]) => ({ site: name, logs: count }))
+    .sort((a, b) => b.logs - a.logs);
 
   return apiResponse(200, {
     totalWorkers: allWorkers.length,
@@ -84,6 +141,9 @@ async function getDashboardStats() {
     averageDaysPerWorker: activeWorkers.length > 0
       ? Math.round(totalDaysLogged / activeWorkers.length)
       : 0,
+    trends,
+    distribution,
+    sites,
   });
 }
 
@@ -304,4 +364,88 @@ async function verifyCertificate(event) {
     },
     // Never expose: full Aadhaar, bank account, phone number
   });
+}
+
+// ─────────────────────────────────────────────────────────
+// GET /api/admin/attendance-trends — Last 7 Days
+// ─────────────────────────────────────────────────────────
+
+async function getAttendanceTrends() {
+  const allLogs = await scanTable(config.tables.attendance);
+
+  // Build last 7 days
+  const days = [];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const count = allLogs.filter((l) => l.log_date === dateStr).length;
+    days.push({ day: dayNames[d.getDay()], date: dateStr, logs: count });
+  }
+
+  return apiResponse(200, { trends: days });
+}
+
+// ─────────────────────────────────────────────────────────
+// GET /api/admin/confidence-stats — Verification Distribution
+// ─────────────────────────────────────────────────────────
+
+async function getConfidenceStats() {
+  const allLogs = await scanTable(config.tables.attendance);
+
+  let autoApproved = 0;
+  let pendingReview = 0;
+  let rejected = 0;
+
+  for (const log of allLogs) {
+    const status = log.verification_status;
+    if (status === 'auto_approved' || status === 'approved') {
+      autoApproved++;
+    } else if (status === 'pending_review') {
+      pendingReview++;
+    } else if (status === 'rejected') {
+      rejected++;
+    }
+  }
+
+  const total = autoApproved + pendingReview + rejected || 1;
+
+  return apiResponse(200, {
+    distribution: [
+      { name: 'Auto-Approved (>=80%)', value: Math.round((autoApproved / total) * 100), color: '#22c55e' },
+      { name: 'Pending Review (60-80%)', value: Math.round((pendingReview / total) * 100), color: '#f59e0b' },
+      { name: 'Rejected (<60%)', value: Math.round((rejected / total) * 100), color: '#ef4444' },
+    ],
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// GET /api/admin/site-breakdown — Attendance by Site
+// ─────────────────────────────────────────────────────────
+
+async function getSiteBreakdown() {
+  const [allLogs, allSites] = await Promise.all([
+    scanTable(config.tables.attendance),
+    scanTable(config.tables.sites),
+  ]);
+
+  // Build site name lookup
+  const siteNames = {};
+  for (const site of allSites) {
+    siteNames[site.site_id] = site.site_name || site.name || site.site_id;
+  }
+
+  // Count logs per site
+  const siteCounts = {};
+  for (const log of allLogs) {
+    const sid = log.site_id || 'unknown';
+    const name = siteNames[sid] || sid;
+    siteCounts[name] = (siteCounts[name] || 0) + 1;
+  }
+
+  const breakdown = Object.entries(siteCounts).map(([name, count]) => ({ site: name, logs: count }));
+  breakdown.sort((a, b) => b.logs - a.logs);
+
+  return apiResponse(200, { sites: breakdown });
 }

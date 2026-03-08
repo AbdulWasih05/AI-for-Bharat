@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
 export default function Layout() {
     const [reviewCount, setReviewCount] = useState(0);
 
     useEffect(() => {
-        fetch('/api/admin/review-queue')
+        fetch(`${API_BASE_URL}/api/admin/review-queue`)
             .then(res => res.json())
             .then(data => setReviewCount(data.count || 0))
             .catch(() => {});

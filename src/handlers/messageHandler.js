@@ -21,7 +21,8 @@ import {
   handleBankPassbook,
   finalizeRegistration,
 } from '../services/registration.js';
-import { transcribeVoice, generateAndUploadVoice } from '../services/voiceProcessor.js';
+import { transcribeVoice, detectLanguage, generateAndUploadVoice } from '../services/voiceProcessor.js';
+import { invokeModel } from '../utils/bedrockClient.js';
 import { handler as attendanceHandler } from './attendanceProcessor.js';
 import { handler as certificateHandler } from './certificateGenerator.js';
 
@@ -298,13 +299,9 @@ async function handleActiveWorker(workerId, worker, message) {
     return await handleAttendanceCheckIn(workerId, worker, message, language);
   }
 
-  // Audio only: voice query or partial check-in
+  // Audio only: voice conversational AI — transcribe → detect intent → execute → respond
   if (message.type === 'audio') {
-    const responseText = language === 'en'
-      ? 'To log attendance, please send a selfie along with a voice note describing your work today.'
-      : 'Attendance log karne ke liye, kripya apna selfie aur aaj ke kaam ka voice note bhejiye.';
-    await sendTextMessage(phoneNumber, responseText);
-    return apiResponse(200, { status: 'guidance_sent', workerId });
+    return await handleVoiceConversation(workerId, worker, message, language);
   }
 
   // Location message: acknowledge and ask for selfie
@@ -324,33 +321,200 @@ async function handleActiveWorker(workerId, worker, message) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Active Worker: Text Message Handler (Progress / Help)
+// Active Worker: Text Message Handler (Intent Detection)
 // ─────────────────────────────────────────────────────────
 
 async function handleActiveWorkerText(workerId, worker, message) {
   const phoneNumber = message.from;
   const language = worker.preferred_language || 'hi';
-  const text = (message.text || '').toLowerCase().trim();
+  const text = (message.text || '').trim();
 
+  // Detect intent and execute
+  const intent = await detectIntent(text, language);
+  return await executeIntent(intent, workerId, worker, phoneNumber, language);
+}
+
+// ─────────────────────────────────────────────────────────
+// Voice Conversational AI (PRD §6.5 Three-Layer Architecture)
+// Layer 1: Intent detection (Bedrock, replacing Lex V2)
+// Layer 2: Free-form NLU via Bedrock for complex queries
+// Layer 3: Polly TTS response in preferred language
+// ─────────────────────────────────────────────────────────
+
+async function handleVoiceConversation(workerId, worker, message, language) {
+  const phoneNumber = message.from;
+
+  try {
+    // Step 1: Download and transcribe the voice note
+    const media = await downloadMedia(message.mediaId);
+    const transcription = await transcribeVoice(media.buffer, language);
+
+    console.log(`[VoiceAI] Worker ${workerId} said: "${transcription}"`);
+
+    if (!transcription || transcription === 'Unknown' || transcription.length < 2) {
+      const responseText = language === 'en'
+        ? 'I could not understand the voice note. Please try again in a quieter place, or type your question.'
+        : 'Voice note samajh nahi aaya. Kripya shant jagah se dobara boliye, ya apna sawaal type kariye.';
+      await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'voice-retry');
+      return apiResponse(200, { status: 'voice_unclear', workerId });
+    }
+
+    // Step 2: Detect intent from transcription
+    const intent = await detectIntent(transcription, language);
+
+    console.log(`[VoiceAI] Detected intent: ${intent.type} (confidence: ${intent.confidence})`);
+
+    // Step 3: Execute intent and get response
+    const result = await executeIntent(intent, workerId, worker, phoneNumber, language);
+
+    return result;
+  } catch (err) {
+    console.error('[VoiceAI] Error:', err.message);
+    const errorText = language === 'en'
+      ? 'Something went wrong. Please try again or type your question.'
+      : 'Kuch problem ho gayi. Dobara koshish kariye ya apna sawaal type kariye.';
+    await sendTextMessage(phoneNumber, errorText);
+    return apiResponse(200, { status: 'voice_error', workerId, error: err.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Intent Detection (Bedrock NLU — replaces Lex V2)
+// ─────────────────────────────────────────────────────────
+
+async function detectIntent(text, language) {
+  const lower = (text || '').toLowerCase();
+
+  // Fast keyword matching first (no Bedrock call needed for obvious intents)
+  if (/\b(progress|status|kitne din|days|din|kaisa|update)\b/.test(lower)) {
+    return { type: 'check_progress', confidence: 95, transcript: text };
+  }
+  if (/\b(certificate|praman|patra|download|sanad)\b/.test(lower)) {
+    return { type: 'request_certificate', confidence: 95, transcript: text };
+  }
+  if (/\b(attendance|haziri|check.?in|selfie|log)\b/.test(lower)) {
+    return { type: 'log_attendance', confidence: 90, transcript: text };
+  }
+  if (/\b(help|madad|sahayata|kya kar|how|kaise)\b/.test(lower)) {
+    return { type: 'help', confidence: 90, transcript: text };
+  }
+  if (/\b(hello|hi|namaskar|namaste|good morning|suprabhat)\b/.test(lower)) {
+    return { type: 'greeting', confidence: 95, transcript: text };
+  }
+
+  // Bedrock NLU for ambiguous or complex queries
+  try {
+    const prompt = `You are the voice assistant for Nirman Mitra, a construction worker welfare platform. A worker sent a voice message. Classify their intent.
+
+Worker said: "${text}"
+Language: ${language === 'hi' ? 'Hindi' : 'English'}
+
+Possible intents:
+- check_progress: Worker wants to know how many days logged, remaining days, or percentage
+- request_certificate: Worker wants their certificate, download link, or asks about eligibility
+- log_attendance: Worker wants to mark today's attendance
+- help: Worker is confused, asking what they can do, or needs guidance
+- greeting: Worker is just saying hello
+- other: Anything else (describe briefly)
+
+Respond in EXACTLY this JSON format (no markdown):
+{"intent": "check_progress", "confidence": 85, "detail": "brief explanation"}`;
+
+    const response = await invokeModel(prompt, {
+      tier: 'light',
+      maxTokens: 100,
+      cacheTtlSeconds: 3600,
+    });
+
+    const jsonStr = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const result = JSON.parse(jsonStr);
+
+    return {
+      type: result.intent || 'help',
+      confidence: Math.min(100, Math.max(0, Number(result.confidence) || 70)),
+      detail: result.detail || '',
+      transcript: text,
+    };
+  } catch (err) {
+    console.warn('[IntentDetection] Bedrock NLU failed, defaulting to help:', err.message);
+    return { type: 'help', confidence: 50, transcript: text };
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Intent Executor — routes detected intent to actions
+// ─────────────────────────────────────────────────────────
+
+async function executeIntent(intent, workerId, worker, phoneNumber, language) {
   const daysLogged = worker.total_days_logged || 0;
   const threshold = config.certificateThreshold;
   const daysRemaining = Math.max(0, threshold - daysLogged);
+  const pct = Math.round((daysLogged / threshold) * 100);
+  const name = worker.name || '';
 
-  // Progress query
-  if (text.includes('progress') || text.includes('status') || text.includes('kitne din') || text.includes('days')) {
-    const responseText = language === 'en'
-      ? `${worker.name || ''}, you have logged ${daysLogged} of ${threshold} days (${Math.round((daysLogged / threshold) * 100)}%). ${daysRemaining > 0 ? `${daysRemaining} days remaining.` : 'Certificate eligible!'}`
-      : `${worker.name || ''}, aapne ${threshold} mein se ${daysLogged} din log kiye hain (${Math.round((daysLogged / threshold) * 100)}%). ${daysRemaining > 0 ? `${daysRemaining} din aur baaki hain.` : 'Certificate ke liye eligible hain!'}`;
-    await sendTextMessage(phoneNumber, responseText);
-    return apiResponse(200, { status: 'progress_sent', workerId, daysLogged, daysRemaining });
+  switch (intent.type) {
+    case 'check_progress': {
+      const responseText = language === 'en'
+        ? `${name}, you have logged ${daysLogged} of ${threshold} days (${pct}%). ${daysRemaining > 0 ? `${daysRemaining} days remaining.` : 'You are eligible for your certificate!'}`
+        : `${name}, aapne ${threshold} mein se ${daysLogged} din log kiye hain (${pct}%). ${daysRemaining > 0 ? `${daysRemaining} din aur baaki hain.` : 'Aap certificate ke liye eligible hain!'}`;
+      await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'progress');
+      return apiResponse(200, { status: 'progress_sent', workerId, intent: intent.type, daysLogged, daysRemaining });
+    }
+
+    case 'request_certificate': {
+      if (daysLogged < threshold) {
+        const responseText = language === 'en'
+          ? `${name}, you need ${daysRemaining} more days to be eligible for a certificate. Keep logging attendance daily!`
+          : `${name}, certificate ke liye ${daysRemaining} din aur chahiye. Har din attendance log karte rahiye!`;
+        await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'cert-not-ready');
+        return apiResponse(200, { status: 'certificate_not_eligible', workerId, intent: intent.type });
+      }
+      // Eligible — trigger certificate
+      await triggerCertificateGeneration(workerId, phoneNumber, language);
+      return apiResponse(200, { status: 'certificate_triggered', workerId, intent: intent.type });
+    }
+
+    case 'log_attendance': {
+      const responseText = language === 'en'
+        ? 'To log attendance, please send a selfie photo along with a voice note describing your work today.'
+        : 'Attendance log karne ke liye, kripya apna selfie photo aur aaj ke kaam ka voice note bhejiye.';
+      await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'attendance-guide');
+      return apiResponse(200, { status: 'attendance_guidance_sent', workerId, intent: intent.type });
+    }
+
+    case 'greeting': {
+      const responseText = language === 'en'
+        ? `Hello ${name}! I am Nirman Mitra, your digital work companion. You have ${daysLogged} days logged. Send a selfie to log attendance, or ask me about your progress.`
+        : `Namaskar ${name}! Main Nirman Mitra hoon, aapka digital saathi. Aapke ${daysLogged} din log hain. Attendance ke liye selfie bhejiye, ya apna progress poochiye.`;
+      await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'greeting');
+      return apiResponse(200, { status: 'greeting_sent', workerId, intent: intent.type });
+    }
+
+    case 'help':
+    default: {
+      const responseText = language === 'en'
+        ? `${name}, here is what I can do:\n• Send a selfie + voice note → Log attendance\n• Say "progress" → Check your days\n• Say "certificate" → Request certificate\n\nYou have ${daysLogged} days logged, ${daysRemaining} remaining.`
+        : `${name}, main yeh kar sakta hoon:\n• Selfie + voice note bhejiye → Attendance log\n• "Progress" boliye → Apne din dekhiye\n• "Certificate" boliye → Certificate maangiye\n\nAapke ${daysLogged} din log hain, ${daysRemaining} baaki.`;
+      await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'help');
+      return apiResponse(200, { status: 'help_sent', workerId, intent: intent.type });
+    }
   }
+}
 
-  // Help / default
-  const responseText = language === 'en'
-    ? `Hello ${worker.name || ''}! You have ${daysLogged} days logged. Send a selfie + voice note to log today's attendance. Type "progress" to check status.`
-    : `Namaskar ${worker.name || ''}! Aapke ${daysLogged} din log hain. Aaj ki attendance ke liye selfie + voice note bhejiye. "progress" type karein status dekhne ke liye.`;
-  await sendTextMessage(phoneNumber, responseText);
-  return apiResponse(200, { status: 'help_sent', workerId });
+// ─────────────────────────────────────────────────────────
+// Helper: Send text + Polly voice response
+// ─────────────────────────────────────────────────────────
+
+async function sendTextAndVoice(phoneNumber, workerId, text, language, label) {
+  await sendTextMessage(phoneNumber, text);
+  try {
+    const audioUrl = await generateAndUploadVoice(workerId, text, language, label);
+    if (audioUrl) {
+      await sendAudioMessage(phoneNumber, audioUrl);
+    }
+  } catch (err) {
+    console.warn('[VoiceAI] Polly TTS failed, text already sent:', err.message);
+  }
 }
 
 // ─────────────────────────────────────────────────────────

@@ -27,6 +27,11 @@ Parameters:
     Type: String
     Default: 'nirman-mitra-verify-token'
 
+  WhatsAppPhoneNumberId:
+    Type: String
+    Default: ''
+    Description: WhatsApp Business Phone Number ID from Meta Developer Console
+
 # ─────────────────────────────────────────────────────────────
 # GLOBALS
 # ─────────────────────────────────────────────────────────────
@@ -52,10 +57,16 @@ Globals:
         AADHAAR_KMS_KEY: !Ref AadhaarEncryptionKey
         WHATSAPP_API_TOKEN: !Ref WhatsAppApiToken
         WHATSAPP_VERIFY_TOKEN: !Ref WhatsAppVerifyToken
+        WHATSAPP_PHONE_NUMBER_ID: !Ref WhatsAppPhoneNumberId
         PROCESSING_QUEUE_URL: !Ref ProcessingQueue
         DLQ_URL: !Ref DeadLetterQueue
         REKOGNITION_COLLECTION_ID: nirman-mitra-workers
         BEDROCK_MODEL_ID: anthropic.claude-3-5-sonnet-20241022-v2:0
+        BEDROCK_LIGHT_MODEL_ID: amazon.nova-lite-v1:0
+        BEDROCK_CACHE_TABLE: !Ref BedrockCacheTable
+        PRIMARY_LLM_PROVIDER: bedrock
+        FALLBACK_LLM_PROVIDER: ''
+        FALLBACK_API_KEY: ''
 
 Resources:
 
@@ -321,6 +332,21 @@ Resources:
         AttributeName: ttl
         Enabled: true
 
+  BedrockCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'NirmanMitra-BedrockCache-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: input_hash
+          AttributeType: S
+      KeySchema:
+        - AttributeName: input_hash
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
   # ─────────────────────────────────────────────────────────
   # SQS QUEUES
   # ─────────────────────────────────────────────────────────
@@ -422,6 +448,8 @@ Resources:
             - Effect: Allow
               Action: [rekognition:CompareFaces, rekognition:SearchFacesByImage, rekognition:IndexFaces, rekognition:CreateCollection]
               Resource: '*'
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BedrockCacheTable
         - Statement:
             - Effect: Allow
               Action: [kms:Encrypt, kms:Decrypt]
@@ -447,6 +475,8 @@ Resources:
             - Effect: Allow
               Action: [rekognition:CompareFaces, rekognition:DetectFaces]
               Resource: '*'
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BedrockCacheTable
         - Statement:
             - Effect: Allow
               Action: [bedrock:InvokeModel]
@@ -472,6 +502,8 @@ Resources:
             - Effect: Allow
               Action: [textract:AnalyzeDocument, textract:DetectDocumentText]
               Resource: '*'
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BedrockCacheTable
         - Statement:
             - Effect: Allow
               Action: [bedrock:InvokeModel]
@@ -579,6 +611,24 @@ Resources:
             RestApiId: !Ref NirmanMitraApi
             Path: /api/certificate/{id}/verify
             Method: GET
+        AttendanceTrends:
+          Type: Api
+          Properties:
+            RestApiId: !Ref NirmanMitraApi
+            Path: /api/admin/attendance-trends
+            Method: GET
+        ConfidenceStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref NirmanMitraApi
+            Path: /api/admin/confidence-stats
+            Method: GET
+        SiteBreakdown:
+          Type: Api
+          Properties:
+            RestApiId: !Ref NirmanMitraApi
+            Path: /api/admin/site-breakdown
+            Method: GET
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref WorkersTable
@@ -667,6 +717,62 @@ Resources:
             TableName: !Ref CertificatesTable
 
   # ─────────────────────────────────────────────────────────
+  # FRONTEND HOSTING (S3 STATIC WEBSITE)
+  # ─────────────────────────────────────────────────────────
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'nirman-mitra-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Comment: !Sub 'Nirman Mitra Admin Dashboard - ${Environment}'
+        Origins:
+          - Id: S3WebsiteOrigin
+            DomainName: !Sub 'nirman-mitra-frontend-${AWS::AccountId}.s3-website.${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: S3WebsiteOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: false
+          Compress: true
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+
+  # ─────────────────────────────────────────────────────────
   # CLOUDWATCH ALARMS
   # ─────────────────────────────────────────────────────────
 
@@ -729,3 +835,15 @@ Outputs:
     Value: !Ref AttendanceFlowStateMachine
   CertificateFlowArn:
     Value: !Ref CertificateFlowStateMachine
+  BedrockCacheTableName:
+    Value: !Ref BedrockCacheTable
+  FrontendUrl:
+    Description: CloudFront URL for admin dashboard (HTTPS)
+    Value: !Sub 'https://${FrontendDistribution.DomainName}'
+  FrontendS3Url:
+    Description: S3 static website URL (HTTP fallback)
+    Value: !GetAtt FrontendBucket.WebsiteURL
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+  FrontendDistributionId:
+    Value: !Ref FrontendDistribution

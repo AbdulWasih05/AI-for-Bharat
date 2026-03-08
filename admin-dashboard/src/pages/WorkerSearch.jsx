@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE_URL = '';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const LANGUAGE_MAP = { hi: 'Hindi', en: 'English', te: 'Telugu', ta: 'Tamil', bn: 'Bengali', gu: 'Gujarati', kn: 'Kannada', ml: 'Malayalam', mr: 'Marathi' };
 
 export default function WorkerSearch() {

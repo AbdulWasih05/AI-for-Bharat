@@ -17,6 +17,7 @@ const config = Object.freeze({
     certificates: process.env.CERTIFICATES_TABLE || 'NirmanMitra-Certificates-dev',
     documents: process.env.DOCUMENTS_TABLE || 'NirmanMitra-Documents-dev',
     conversation: process.env.CONVERSATION_TABLE || 'NirmanMitra-ConversationState-dev',
+    bedrockCache: process.env.BEDROCK_CACHE_TABLE || 'NirmanMitra-BedrockCache-dev',
   },
 
   // S3 Buckets
@@ -33,8 +34,8 @@ const config = Object.freeze({
   whatsapp: {
     apiToken: process.env.WHATSAPP_API_TOKEN || '',
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || 'nirman-mitra-verify-token',
-    apiBaseUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v18.0',
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+    apiBaseUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v21.0',
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID || '',
   },
 
   // SQS
@@ -56,7 +57,15 @@ const config = Object.freeze({
   // Bedrock
   bedrock: {
     modelId: process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0',
+    lightModelId: process.env.BEDROCK_LIGHT_MODEL_ID || 'amazon.nova-lite-v1:0',
     region: process.env.AWS_REGION || 'ap-south-1',
+  },
+
+  // LLM Fallback
+  llmFallback: {
+    primaryProvider: process.env.PRIMARY_LLM_PROVIDER || 'bedrock',
+    fallbackProvider: process.env.FALLBACK_LLM_PROVIDER || '',
+    fallbackApiKey: process.env.FALLBACK_API_KEY || '',
   },
 
   // Polly language → voice mapping (Neural voices for Indian languages)

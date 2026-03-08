@@ -24,7 +24,7 @@ import {
   incrementDaysLogged,
 } from '../utils/dynamodb.js';
 import { downloadFromS3 } from '../utils/s3.js';
-import { invokeBedrockClaude } from '../services/voiceProcessor.js';
+import { invokeModel } from '../utils/bedrockClient.js';
 
 const rekognitionClient = new RekognitionClient({ region: config.bedrock.region });
 
@@ -244,7 +244,7 @@ Respond in EXACTLY this JSON format (no markdown, no code blocks):
 {"is_work_related": true/false, "activity": "brief description", "location_mention": "any location mentioned or null", "confidence": 0-100, "reasoning": "brief explanation"}`;
 
   try {
-    const response = await invokeBedrockClaude(prompt, 200);
+    const response = await invokeModel(prompt, { tier: 'light', maxTokens: 200, cacheTtlSeconds: 86400 });
     const jsonStr = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     const result = JSON.parse(jsonStr);
 

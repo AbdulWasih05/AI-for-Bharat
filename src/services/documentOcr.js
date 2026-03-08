@@ -7,7 +7,7 @@
 import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
 import { RekognitionClient, DetectFacesCommand } from '@aws-sdk/client-rekognition';
 import config, { isDemoMode } from '../utils/config.js';
-import { invokeBedrockClaude } from './voiceProcessor.js';
+import { invokeModel } from '../utils/bedrockClient.js';
 
 const IS_DEMO = isDemoMode();
 const textractClient = IS_DEMO ? null : new TextractClient({ region: config.bedrock.region });
@@ -212,7 +212,7 @@ Respond in EXACTLY this JSON format (no markdown, no code blocks):
 {"match": true/false, "confidence": 0-100, "reasoning": "brief explanation"}`;
 
   try {
-    const response = await invokeBedrockClaude(prompt, 200);
+    const response = await invokeModel(prompt, { tier: 'heavy', maxTokens: 200, cacheTtlSeconds: 604800 });
 
     // Parse JSON from response (Claude sometimes wraps in markdown)
     const jsonStr = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();

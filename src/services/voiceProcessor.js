@@ -4,13 +4,12 @@
  * Per PRD §6.5: Voice-first, zero literacy required.
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly';
 import config from '../utils/config.js';
+import { invokeModel } from '../utils/bedrockClient.js';
 import { uploadProcessedAudio } from '../utils/s3.js';
 import { generatePresignedUrl } from '../utils/s3.js';
 
-const bedrockClient = new BedrockRuntimeClient({ region: config.bedrock.region });
 const pollyClient = new PollyClient({ region: config.bedrock.region });
 
 // ─────────────────────────────────────────────────────────
@@ -71,43 +70,20 @@ export async function transcribeVoice(audioBuffer, language = 'hi') {
     return 'Ram Kumar';
   }
 
-  // Use Bedrock Claude with audio description for prototype
+  // Use Bedrock via unified client for prototype
   // In production: Amazon Transcribe Streaming API
   try {
-    const audioBase64 = audioBuffer.toString('base64');
-
-    const prompt = `The following is a base64-encoded audio recording from an Indian construction worker speaking in ${language === 'hi' ? 'Hindi' : 'English'}. The worker is likely stating their name or describing their work. Please transcribe what the worker said. Return ONLY the transcription, nothing else.
+    const prompt = `The following is a voice recording from an Indian construction worker speaking in ${language === 'hi' ? 'Hindi' : 'English'}. The worker is likely stating their name or describing their work. Please transcribe what the worker said. Return ONLY the transcription, nothing else.
 
 Note: If you cannot process the audio, make a best guess based on common Indian construction worker names and work descriptions.`;
 
-    // Claude 3.5 supports multimodal — send audio as part of the message
-    const body = JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 200,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: prompt,
-            },
-          ],
-        },
-      ],
+    const response = await invokeModel(prompt, {
+      tier: 'light',
+      maxTokens: 200,
+      cacheTtlSeconds: 86400,
     });
 
-    const response = await bedrockClient.send(
-      new InvokeModelCommand({
-        modelId: config.bedrock.modelId,
-        body,
-        contentType: 'application/json',
-        accept: 'application/json',
-      }),
-    );
-
-    const result = JSON.parse(new TextDecoder().decode(response.body));
-    return result.content?.[0]?.text?.trim() || 'Unknown';
+    return response.trim() || 'Unknown';
   } catch (err) {
     console.error('Voice transcription failed:', err.message);
     return 'Unknown';
@@ -178,38 +154,14 @@ export async function generateAndUploadVoice(workerId, text, languageCode, label
 }
 
 // ─────────────────────────────────────────────────────────
-// Bedrock Claude Helper
+// Bedrock Claude Helper (backward-compat wrapper)
 // ─────────────────────────────────────────────────────────
 
 /**
- * Invoke Bedrock Claude 3.5 Sonnet with a text prompt
- * @param {string} prompt
- * @param {number} maxTokens
- * @returns {Promise<string>} Response text
+ * @deprecated Use invokeModel from ../utils/bedrockClient.js directly
  */
 export async function invokeBedrockClaude(prompt, maxTokens = 500) {
-  const body = JSON.stringify({
-    anthropic_version: 'bedrock-2023-05-31',
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-  });
-
-  const response = await bedrockClient.send(
-    new InvokeModelCommand({
-      modelId: config.bedrock.modelId,
-      body,
-      contentType: 'application/json',
-      accept: 'application/json',
-    }),
-  );
-
-  const result = JSON.parse(new TextDecoder().decode(response.body));
-  return result.content?.[0]?.text || '';
+  return invokeModel(prompt, { tier: 'heavy', maxTokens });
 }
 
 // ─────────────────────────────────────────────────────────
