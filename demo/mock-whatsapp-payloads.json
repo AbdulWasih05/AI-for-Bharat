@@ -1,0 +1,336 @@
+{
+  "text_greeting_hi": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_text_001",
+                  "timestamp": "1709308800",
+                  "type": "text",
+                  "text": { "body": "Namaste" }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "text_greeting_en": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_text_002",
+                  "timestamp": "1709308860",
+                  "type": "text",
+                  "text": { "body": "Hi" }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "text_name": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_text_003",
+                  "timestamp": "1709308920",
+                  "type": "text",
+                  "text": { "body": "Ram Kumar Singh" }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "audio_name": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_audio_001",
+                  "timestamp": "1709308980",
+                  "type": "audio",
+                  "audio": {
+                    "id": "AUDIO_MEDIA_ID_001",
+                    "mime_type": "audio/ogg; codecs=opus",
+                    "voice": true
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "image_aadhaar": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_image_001",
+                  "timestamp": "1709309040",
+                  "type": "image",
+                  "image": {
+                    "id": "IMAGE_MEDIA_ID_AADHAAR",
+                    "mime_type": "image/jpeg",
+                    "caption": "Aadhaar card"
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "image_selfie": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_image_002",
+                  "timestamp": "1709309100",
+                  "type": "image",
+                  "image": {
+                    "id": "IMAGE_MEDIA_ID_SELFIE",
+                    "mime_type": "image/jpeg"
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "image_passbook": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_image_003",
+                  "timestamp": "1709309160",
+                  "type": "image",
+                  "image": {
+                    "id": "IMAGE_MEDIA_ID_PASSBOOK",
+                    "mime_type": "image/jpeg",
+                    "caption": "Bank passbook"
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "location_checkin": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "contacts": [
+                {
+                  "profile": { "name": "Ram Kumar" },
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "wamid.demo_location_001",
+                  "timestamp": "1709309220",
+                  "type": "location",
+                  "location": {
+                    "latitude": 28.6139,
+                    "longitude": 77.209
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  },
+
+  "status_update": {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "919876543210",
+                "phone_number_id": "PHONE_NUMBER_ID"
+              },
+              "statuses": [
+                {
+                  "id": "wamid.demo_status_001",
+                  "status": "delivered",
+                  "timestamp": "1709309280",
+                  "recipient_id": "919876543210"
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ]
+  }
+}
