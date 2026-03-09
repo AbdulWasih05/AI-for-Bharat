@@ -238,8 +238,6 @@ function InfiniteLogos() {
         <div className="logos-section">
             <p className="logos-label">POWERING NIRMAN MITRA</p>
             <div className="logos-track-wrapper">
-                <div className="logos-fade-left" />
-                <div className="logos-fade-right" />
                 <div className="logos-track">
                     {allLogos.map((name, i) => (
                         <span key={i} className="logo-text">{name}</span>
@@ -610,11 +608,10 @@ export default function LandingPage() {
         <div className="landing-root">
             <Preloader onFinish={() => setPreloaderDone(true)} />
 
-            {/* ── Ambient Top Gradients ────────────────────────── */}
+            {/* ── Ambient Top Gradients & Background ───────────────── */}
             <div className="ambient-gradients">
+                <div className="hero-bg-image" />
                 <div className="grad-saffron" />
-                <div className="grad-green-left" />
-                <div className="grad-green-right" />
                 <div className="grad-fade" />
             </div>
 
@@ -626,9 +623,9 @@ export default function LandingPage() {
                     </Link>
 
                     <div className="nav-links">
-                        <a href="#platform" className="nav-link">Platform <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5l7 7-7 7" /></svg></a>
-                        <a href="#workers" className="nav-link">Workers <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5l7 7-7 7" /></svg></a>
-                        <a href="#about" className="nav-link">About <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5l7 7-7 7" /></svg></a>
+                        <a href="#platform" className="nav-link">Platform <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg></a>
+                        <a href="#workers" className="nav-link">Workers <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg></a>
+                        <a href="#about" className="nav-link">About <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg></a>
                     </div>
 
                     <div className="nav-actions">
@@ -644,37 +641,56 @@ export default function LandingPage() {
 
             {/* ── Hero Section ─────────────────────────────────── */}
             <main className="hero-section">
-                {/* Decorative flourish SVG */}
-                <div className="hero-flourish">
-                    <svg viewBox="0 0 600 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="flourish-svg">
-                        <g opacity="0.35" stroke="#8B7355" strokeWidth="1.2">
-                            <circle cx="300" cy="50" r="25" /><circle cx="300" cy="50" r="18" /><circle cx="300" cy="50" r="10" />
-                            {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map(a => <ellipse key={a} cx="300" cy="50" rx="8" ry="30" transform={`rotate(${a} 300 50)`} />)}
-                            <path d="M260 50 Q220 30 180 50 Q140 70 100 50 Q80 40 60 50" />
-                            <path d="M340 50 Q380 30 420 50 Q460 70 500 50 Q520 40 540 50" />
-                            <ellipse cx="200" cy="40" rx="12" ry="6" transform="rotate(-30 200 40)" />
-                            <ellipse cx="400" cy="40" rx="12" ry="6" transform="rotate(30 400 40)" />
-                            <circle cx="230" cy="45" r="2" fill="#8B7355" /><circle cx="370" cy="45" r="2" fill="#8B7355" />
+                
+                {/* ── Top Mandala Decoration ─────────────────────── */}
+                <div className="hero-mandala">
+                    <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <g opacity="0.6" stroke="#9A7B4F" strokeWidth="0.5">
+                            {/* Half-mandala pattern hanging from top */}
+                            <path d="M 0,0 C 20,40 40,60 100,80 C 160,60 180,40 200,0" fill="rgba(255, 235, 200, 0.1)" strokeWidth="1.5" />
+                            <path d="M 20,0 C 40,20 60,40 100,50 C 140,40 160,20 180,0" />
+                            <path d="M 40,0 C 60,10 80,20 100,25 C 120,20 140,10 160,0" />
+                            <circle cx="100" cy="15" r="5" fill="#9A7B4F" />
+                            <circle cx="100" cy="35" r="3" fill="#9A7B4F" />
+                            <circle cx="100" cy="80" r="2" fill="#9A7B4F" />
+                            {[0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200].map(x => (
+                                <path key={x} d={`M ${x},0 L 100,25`} opacity="0.2" />
+                            ))}
+                            <path d="M 85,80 L 115,80 L 100,95 Z" fill="rgba(154, 123, 79, 0.3)" strokeWidth="1" />
                         </g>
                     </svg>
                 </div>
 
-                <div className="hero-pill">
-                    <span>India's First Voice-AI Welfare Platform</span>
+                <div className="hero-ribbon-banner">
+                    <div className="ribbon-content">
+                        <span>India's First Voice-AI Welfare Platform</span>
+                    </div>
                 </div>
 
                 <h1 className="hero-headline">
-                    Voice-first AI for India's builders
+                    Voice-first AI for India's<br/>builders
                 </h1>
 
                 <p className="hero-sub">
-                    Built for 71 million construction workers. Powered by AWS AI services.<br />
-                    Enabling BOCW welfare access through selfies, voice notes, and Smart Certificates.
+                    Built for 71 million construction workers.ALL Powered by AWS AI services.<br />
+                    Enabling BOCW welfare access through selfies, voice notes & geo-fencing.<br />
+                    Zero literacy. Zero downloads. Zero contractor dependency.
                 </p>
 
-                <Link to="/dashboard" className="hero-cta">
-                    Experience Nirman Mitra
-                </Link>
+
+
+                <div className="hero-cta-wrapper">
+                    <Link to="/dashboard" className="hero-cta-ornate">
+                        <div className="cta-content">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="cta-icon">
+                                <path d="M5 21v-8M12 21V9M19 21v-8M3 21h18M8 21v-5M16 21v-5M5 6l7-3 7 3" />
+                                <rect x="5" y="6" width="14" height="15" rx="1" />
+                                <path d="M9 10h.01M15 10h.01M9 14h.01M15 14h.01" />
+                            </svg>
+                            <span>Experience Nirman Mitra</span>
+                        </div>
+                    </Link>
+                </div>
 
                 {/* Infinite Scroll Logos */}
                 <InfiniteLogos />
