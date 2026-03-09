@@ -10,14 +10,14 @@ export default function App() {
     return (
         <BrowserRouter>
             <Routes>
-                <Route path="verify/:hash" element={<CertificateVerify />} />
-                <Route path="verify" element={<CertificateVerify />} />
                 <Route path="/" element={<Layout />}>
                     <Route index element={<Navigate to="/dashboard" replace />} />
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="review" element={<ReviewQueue />} />
                     <Route path="workers" element={<WorkerSearch />} />
                     <Route path="workers/:id" element={<WorkerSearch />} />
+                    <Route path="verify" element={<CertificateVerify />} />
+                    <Route path="verify/:hash" element={<CertificateVerify />} />
                 </Route>
             </Routes>
         </BrowserRouter>
