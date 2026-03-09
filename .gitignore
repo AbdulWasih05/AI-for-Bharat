@@ -52,3 +52,15 @@ cert-output.json
 
 # Scripts
 backdate-commits.sh
+
+# Build artifacts
+*.zip
+
+# Environment overrides
+.env.production
+admin-dashboard/.env.production
+
+# Internal docs (not for repo)
+CLAUDE_CODE_DIRECTIVE.md
+IMPLEMENTATION_STATUS.md
+implementation_plan.md.resolved
