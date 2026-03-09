@@ -5,15 +5,17 @@ import Dashboard from './pages/Dashboard';
 import ReviewQueue from './pages/ReviewQueue';
 import WorkerSearch from './pages/WorkerSearch';
 import CertificateVerify from './pages/CertificateVerify';
+import LandingPage from './pages/LandingPage';
 
 export default function App() {
     return (
         <BrowserRouter>
             <Routes>
+                <Route path="home" element={<LandingPage />} />
                 <Route path="verify/:hash" element={<CertificateVerify />} />
                 <Route path="verify" element={<CertificateVerify />} />
                 <Route path="/" element={<Layout />}>
-                    <Route index element={<Navigate to="/dashboard" replace />} />
+                    <Route index element={<Navigate to="/home" replace />} />
                     <Route path="dashboard" element={<Dashboard />} />
                     <Route path="review" element={<ReviewQueue />} />
                     <Route path="workers" element={<WorkerSearch />} />
