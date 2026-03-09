@@ -7,9 +7,9 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const FALLBACK_CONFIDENCE = [
-    { name: 'Auto-Approved (>=80%)', value: 85, color: '#22c55e' },
-    { name: 'Pending Review (60-80%)', value: 10, color: '#f59e0b' },
-    { name: 'Rejected (<60%)', value: 5, color: '#ef4444' },
+    { name: 'Auto-Approved (>=80%)', value: 85, color: '#138808' },
+    { name: 'Pending Review (60-80%)', value: 10, color: '#ff9933' },
+    { name: 'Rejected (<60%)', value: 5, color: '#dc2626' },
 ];
 
 const FALLBACK_DAILY = [
@@ -59,7 +59,7 @@ export default function Dashboard() {
 
     if (!stats) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading...</div>;
 
-    const SITE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#818cf8'];
+    const SITE_COLORS = ['#138808', '#ff9933', '#000080', '#1a8c38', '#e67e22'];
 
     return (
         <div>
@@ -76,14 +76,14 @@ export default function Dashboard() {
                 <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: '6px',
                     padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
-                    background: isLive ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                    color: isLive ? '#22c55e' : '#f59e0b',
-                    border: `1px solid ${isLive ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                    background: isLive ? 'rgba(19,136,8,0.1)' : 'rgba(255,153,51,0.1)',
+                    color: isLive ? '#138808' : '#ff9933',
+                    border: `1px solid ${isLive ? 'rgba(19,136,8,0.3)' : 'rgba(255,153,51,0.3)'}`,
                 }}>
                     <span style={{
                         width: '8px', height: '8px', borderRadius: '50%',
-                        background: isLive ? '#22c55e' : '#f59e0b',
-                        boxShadow: isLive ? '0 0 6px #22c55e' : '0 0 6px #f59e0b',
+                        background: isLive ? '#138808' : '#ff9933',
+                        boxShadow: isLive ? '0 0 6px #138808' : '0 0 6px #ff9933',
                     }} />
                     {isLive ? 'Live' : 'Demo'}
                 </span>
@@ -117,7 +117,7 @@ export default function Dashboard() {
                                 label={({ value }) => `${value}%`}>
                                 {confidenceData.map((entry, i) => (<Cell key={i} fill={entry.color} />))}
                             </Pie>
-                            <Tooltip contentStyle={{ background: '#1e2130', border: '1px solid #2a2d3e', borderRadius: '8px', color: '#f0f2f5' }} />
+                            <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1a1a2e' }} />
                             <Legend />
                         </PieChart>
                     </ResponsiveContainer>
@@ -129,15 +129,15 @@ export default function Dashboard() {
                         <AreaChart data={dailyLogs}>
                             <defs>
                                 <linearGradient id="attendanceGradient" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#138808" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#138808" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" />
-                            <XAxis dataKey="day" stroke="#5a5e73" fontSize={12} />
-                            <YAxis stroke="#5a5e73" fontSize={12} />
-                            <Tooltip contentStyle={{ background: '#1e2130', border: '1px solid #2a2d3e', borderRadius: '8px', color: '#f0f2f5' }} />
-                            <Area type="monotone" dataKey="logs" stroke="#6366f1" strokeWidth={2}
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="day" stroke="#8896a6" fontSize={12} />
+                            <YAxis stroke="#8896a6" fontSize={12} />
+                            <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1a1a2e' }} />
+                            <Area type="monotone" dataKey="logs" stroke="#138808" strokeWidth={2}
                                 fill="url(#attendanceGradient)" />
                         </AreaChart>
                     </ResponsiveContainer>
@@ -150,10 +150,10 @@ export default function Dashboard() {
                         <h3>Attendance by Site</h3>
                         <ResponsiveContainer width="100%" height={280}>
                             <BarChart data={siteData} layout="vertical">
-                                <CartesianGrid strokeDasharray="3 3" stroke="#2a2d3e" />
-                                <XAxis type="number" stroke="#5a5e73" fontSize={12} />
-                                <YAxis dataKey="site" type="category" stroke="#5a5e73" fontSize={11} width={120} />
-                                <Tooltip contentStyle={{ background: '#1e2130', border: '1px solid #2a2d3e', borderRadius: '8px', color: '#f0f2f5' }} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis type="number" stroke="#8896a6" fontSize={12} />
+                                <YAxis dataKey="site" type="category" stroke="#8896a6" fontSize={11} width={120} />
+                                <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1a1a2e' }} />
                                 <Bar dataKey="logs" radius={[0, 6, 6, 0]}>
                                     {siteData.map((_, i) => (
                                         <Cell key={i} fill={SITE_COLORS[i % SITE_COLORS.length]} />

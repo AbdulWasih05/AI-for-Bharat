@@ -49,57 +49,18 @@ export default function CertificateVerify() {
     }
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            background: 'var(--bg-primary)',
-            padding: '32px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-        }}>
-            {/* Branding */}
-            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-                <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginBottom: '8px',
-                }}>
-                    <div style={{
-                        width: '44px',
-                        height: '44px',
-                        background: 'var(--accent-gradient)',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '22px',
-                    }}>
-                        <span role="img" aria-label="building">&#x1F3D7;</span>
-                    </div>
-                    <div>
-                        <h1 style={{
-                            fontSize: '22px',
-                            fontWeight: 700,
-                            background: 'var(--accent-gradient)',
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent',
-                        }}>
-                            Nirman Mitra
-                        </h1>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            AI-Powered Construction Workforce Platform
-                        </span>
-                    </div>
-                </div>
+        <div>
+            <div className="page-header">
+                <h2>Verify Certificate</h2>
+                <p>Validate a worker's Smart Certificate using the SHA-256 hash from the QR code</p>
             </div>
 
-            {/* Manual Search (when no hash in URL) */}
+            {/* Manual Search */}
             {!hash && !cert && !loading && (
-                <div className="card" style={{ maxWidth: '560px', width: '100%', marginBottom: '20px' }}>
-                    <h3 style={{ marginBottom: '12px' }}>Verify a Certificate</h3>
+                <div className="card" style={{ maxWidth: '640px', marginBottom: '20px' }}>
+                    <h3 style={{ marginBottom: '12px' }}>Enter Verification Hash</h3>
                     <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                        Enter the certificate verification hash from the QR code:
+                        Paste the certificate hash from the QR code or certificate PDF:
                     </p>
                     <form onSubmit={handleManualVerify} style={{ display: 'flex', gap: '8px' }}>
                         <input
@@ -110,7 +71,7 @@ export default function CertificateVerify() {
                             onChange={e => setManualHash(e.target.value)}
                             style={{ flex: 1 }}
                         />
-                        <button className="btn btn-success btn-sm" type="submit" disabled={!manualHash.trim()}>
+                        <button className="btn btn-primary btn-sm" type="submit" disabled={!manualHash.trim()}>
                             Verify
                         </button>
                     </form>
@@ -119,14 +80,14 @@ export default function CertificateVerify() {
 
             {/* Loading */}
             {loading && (
-                <div className="card" style={{ maxWidth: '560px', width: '100%', textAlign: 'center', padding: '40px' }}>
+                <div className="card" style={{ maxWidth: '640px', textAlign: 'center', padding: '40px' }}>
                     <p style={{ color: 'var(--text-muted)' }}>Verifying certificate...</p>
                 </div>
             )}
 
-            {/* Main Card */}
+            {/* Result Card */}
             {!loading && (hash || cert) && (
-                <div className="card" style={{ maxWidth: '560px', width: '100%' }}>
+                <div className="card" style={{ maxWidth: '640px' }}>
                     {/* Status Badge */}
                     <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                         {verified ? (
@@ -205,8 +166,8 @@ export default function CertificateVerify() {
 
                             {/* Triple Verification Badge */}
                             <div style={{
-                                background: 'rgba(99, 102, 241, 0.08)',
-                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                background: 'rgba(19, 136, 8, 0.06)',
+                                border: '1px solid rgba(19, 136, 8, 0.2)',
                                 borderRadius: 'var(--border-radius-sm)',
                                 padding: '16px',
                                 textAlign: 'center',
@@ -217,13 +178,11 @@ export default function CertificateVerify() {
                                     gap: '8px',
                                     marginBottom: '6px',
                                 }}>
-                                    <span style={{ fontSize: '18px' }} role="img" aria-label="shield">&#x1F6E1;</span>
+                                    <span style={{ fontSize: '18px' }}>&#x1F6E1;</span>
                                     <span style={{
                                         fontSize: '14px',
                                         fontWeight: 700,
-                                        background: 'var(--accent-gradient)',
-                                        WebkitBackgroundClip: 'text',
-                                        WebkitTextFillColor: 'transparent',
+                                        color: '#138808',
                                     }}>
                                         Triple Verification&trade;
                                     </span>
@@ -240,9 +199,7 @@ export default function CertificateVerify() {
                         </>
                     ) : (
                         <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                            <p style={{ fontSize: '48px', marginBottom: '16px' }} role="img" aria-label="warning">
-                                &#x26A0;&#xFE0F;
-                            </p>
+                            <p style={{ fontSize: '48px', marginBottom: '16px' }}>&#x26A0;&#xFE0F;</p>
                             <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.6 }}>
                                 No certificate was found matching this hash.
                                 <br />
@@ -252,16 +209,6 @@ export default function CertificateVerify() {
                     )}
                 </div>
             )}
-
-            {/* Footer */}
-            <p style={{
-                marginTop: '24px',
-                fontSize: '12px',
-                color: 'var(--text-muted)',
-                textAlign: 'center',
-            }}>
-                Nirman Mitra &mdash; Empowering India's Construction Workforce with AI
-            </p>
         </div>
     );
 }

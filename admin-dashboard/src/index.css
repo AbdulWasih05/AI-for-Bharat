@@ -1,30 +1,39 @@
-/* ── Nirman Mitra Admin Dashboard — Global Styles ─────────── */
+/* ── Nirman Mitra Admin Dashboard — India Tricolor Theme ─────── */
 
 :root {
-    --bg-primary: #0f1117;
-    --bg-secondary: #1a1d27;
-    --bg-card: #1e2130;
-    --bg-card-hover: #252840;
-    --bg-input: #161823;
-    --text-primary: #f0f2f5;
-    --text-secondary: #8b8fa3;
-    --text-muted: #5a5e73;
-    --accent-primary: #6366f1;
-    --accent-secondary: #8b5cf6;
-    --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    --success: #22c55e;
-    --warning: #f59e0b;
-    --danger: #ef4444;
-    --info: #3b82f6;
-    --border-color: #2a2d3e;
+    --bg-primary: #f7f8fa;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f0faf0;
+    --bg-input: #f3f4f6;
+    --text-primary: #1a1a2e;
+    --text-secondary: #4a5568;
+    --text-muted: #8896a6;
+    --saffron: #ff9933;
+    --saffron-dark: #e67e22;
+    --saffron-light: rgba(255, 153, 51, 0.12);
+    --white-pure: #ffffff;
+    --green-india: #138808;
+    --green-light: rgba(19, 136, 8, 0.10);
+    --green-dark: #0e6b06;
+    --navy: #000080;
+    --navy-light: rgba(0, 0, 128, 0.08);
+    --accent-primary: #138808;
+    --accent-secondary: #ff9933;
+    --accent-gradient: linear-gradient(135deg, #ff9933 0%, #138808 100%);
+    --success: #138808;
+    --warning: #ff9933;
+    --danger: #dc2626;
+    --info: #000080;
+    --border-color: #e2e8f0;
     --border-radius: 12px;
     --border-radius-sm: 8px;
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.5);
-    --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.12);
+    --shadow-glow: 0 0 20px rgba(19, 136, 8, 0.1);
     --transition: all 0.2s ease;
-    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 *,
@@ -48,9 +57,11 @@ body {
     min-height: 100vh;
 }
 
+/* ── Sidebar ───────────────────────────────────────────────── */
+
 .sidebar {
     width: 260px;
-    background: var(--bg-secondary);
+    background: var(--white-pure);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
@@ -59,11 +70,13 @@ body {
     left: 0;
     height: 100vh;
     z-index: 100;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
 }
 
 .sidebar-header {
     padding: 24px 20px;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 3px solid transparent;
+    border-image: linear-gradient(to right, #ff9933 33%, #ffffff 33%, #ffffff 66%, #138808 66%) 1;
 }
 
 .sidebar-logo {
@@ -81,14 +94,13 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 20px;
+    box-shadow: 0 2px 8px rgba(19, 136, 8, 0.2);
 }
 
 .sidebar-logo h1 {
     font-size: 18px;
     font-weight: 700;
-    background: var(--accent-gradient);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--green-india);
 }
 
 .sidebar-logo span {
@@ -118,13 +130,15 @@ body {
 }
 
 .nav-link:hover {
-    background: var(--bg-card);
-    color: var(--text-primary);
+    background: var(--green-light);
+    color: var(--green-india);
 }
 
 .nav-link.active {
-    background: rgba(99, 102, 241, 0.12);
-    color: var(--accent-primary);
+    background: var(--green-light);
+    color: var(--green-india);
+    font-weight: 600;
+    border-left: 3px solid var(--green-india);
 }
 
 .nav-link .icon {
@@ -135,7 +149,7 @@ body {
 
 .nav-badge {
     margin-left: auto;
-    background: var(--danger);
+    background: var(--saffron);
     color: white;
     font-size: 11px;
     font-weight: 600;
@@ -143,11 +157,14 @@ body {
     border-radius: 10px;
 }
 
+/* ── Main Content ──────────────────────────────────────────── */
+
 .main-content {
     flex: 1;
     margin-left: 260px;
     padding: 32px;
     min-height: 100vh;
+    background: var(--bg-primary);
 }
 
 .page-header {
@@ -158,6 +175,7 @@ body {
     font-size: 24px;
     font-weight: 700;
     margin-bottom: 4px;
+    color: var(--text-primary);
 }
 
 .page-header p {
@@ -165,18 +183,23 @@ body {
     color: var(--text-secondary);
 }
 
+/* ── Cards ─────────────────────────────────────────────────── */
+
 .card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     padding: 24px;
     transition: var(--transition);
+    box-shadow: var(--shadow-sm);
 }
 
 .card:hover {
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(19, 136, 8, 0.25);
     box-shadow: var(--shadow-glow);
 }
+
+/* ── Stats Grid ────────────────────────────────────────────── */
 
 .stat-grid {
     display: grid;
@@ -194,6 +217,7 @@ body {
     align-items: flex-start;
     gap: 16px;
     transition: var(--transition);
+    box-shadow: var(--shadow-sm);
 }
 
 .stat-card:hover {
@@ -213,25 +237,26 @@ body {
 }
 
 .stat-icon.workers {
-    background: rgba(99, 102, 241, 0.12);
+    background: var(--saffron-light);
 }
 
 .stat-icon.attendance {
-    background: rgba(34, 197, 94, 0.12);
+    background: var(--green-light);
 }
 
 .stat-icon.reviews {
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(255, 153, 51, 0.12);
 }
 
 .stat-icon.certificates {
-    background: rgba(59, 130, 246, 0.12);
+    background: var(--navy-light);
 }
 
 .stat-info h3 {
     font-size: 28px;
     font-weight: 800;
     line-height: 1.1;
+    color: var(--text-primary);
 }
 
 .stat-info p {
@@ -239,6 +264,8 @@ body {
     color: var(--text-secondary);
     margin-top: 4px;
 }
+
+/* ── Tables ────────────────────────────────────────────────── */
 
 .table-container {
     overflow-x: auto;
@@ -257,7 +284,8 @@ table th {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-muted);
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 2px solid var(--border-color);
+    background: var(--bg-primary);
 }
 
 table td {
@@ -267,8 +295,10 @@ table td {
 }
 
 table tr:hover td {
-    background: var(--bg-card-hover);
+    background: var(--green-light);
 }
+
+/* ── Badges ────────────────────────────────────────────────── */
 
 .badge {
     display: inline-flex;
@@ -282,29 +312,31 @@ table tr:hover td {
 
 .badge.approved,
 .badge.active {
-    background: rgba(34, 197, 94, 0.12);
-    color: var(--success);
+    background: var(--green-light);
+    color: var(--green-india);
 }
 
 .badge.pending {
-    background: rgba(245, 158, 11, 0.12);
-    color: var(--warning);
+    background: var(--saffron-light);
+    color: var(--saffron-dark);
 }
 
 .badge.rejected {
-    background: rgba(239, 68, 68, 0.12);
+    background: rgba(220, 38, 38, 0.1);
     color: var(--danger);
 }
 
 .badge.auto_approved {
-    background: rgba(59, 130, 246, 0.12);
-    color: var(--info);
+    background: var(--navy-light);
+    color: var(--navy);
 }
 
 .badge.incomplete {
-    background: rgba(245, 158, 11, 0.12);
-    color: var(--warning);
+    background: var(--saffron-light);
+    color: var(--saffron-dark);
 }
+
+/* ── Buttons ───────────────────────────────────────────────── */
 
 .btn {
     display: inline-flex;
@@ -321,17 +353,17 @@ table tr:hover td {
 }
 
 .btn-primary {
-    background: var(--accent-gradient);
+    background: var(--green-india);
     color: white;
 }
 
 .btn-primary:hover {
-    opacity: 0.9;
+    background: var(--green-dark);
     transform: translateY(-1px);
 }
 
 .btn-success {
-    background: var(--success);
+    background: var(--green-india);
     color: white;
 }
 
@@ -350,6 +382,8 @@ table tr:hover td {
     padding: 6px 14px;
     font-size: 13px;
 }
+
+/* ── Search ────────────────────────────────────────────────── */
 
 .search-bar {
     display: flex;
@@ -372,9 +406,11 @@ table tr:hover td {
 
 .search-input:focus {
     outline: none;
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    border-color: var(--green-india);
+    box-shadow: 0 0 0 3px rgba(19, 136, 8, 0.1);
 }
+
+/* ── Charts ────────────────────────────────────────────────── */
 
 .charts-grid {
     display: grid;
@@ -388,13 +424,17 @@ table tr:hover td {
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     padding: 20px;
+    box-shadow: var(--shadow-sm);
 }
 
 .chart-card h3 {
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 16px;
+    color: var(--text-primary);
 }
+
+/* ── Confidence Bars ───────────────────────────────────────── */
 
 .confidence-bar {
     width: 60px;
@@ -412,16 +452,18 @@ table tr:hover td {
 }
 
 .confidence-fill.high {
-    background: var(--success);
+    background: var(--green-india);
 }
 
 .confidence-fill.medium {
-    background: var(--warning);
+    background: var(--saffron);
 }
 
 .confidence-fill.low {
     background: var(--danger);
 }
+
+/* ── Responsive ────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
     .sidebar {
