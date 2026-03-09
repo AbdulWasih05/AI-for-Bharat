@@ -13,6 +13,7 @@ import {
   getPendingReviews,
   getWorkerByPhone,
   getWorkerAttendanceLogs,
+  incrementDaysLogged,
 } from '../utils/dynamodb.js';
 
 export const handler = async (event) => {
@@ -245,6 +246,15 @@ async function handleReviewAction(event) {
       ':ts': new Date().toISOString(),
     },
   );
+
+  // Increment days logged when admin approves (matches auto_approved behavior)
+  if (action === 'approve') {
+    try {
+      await incrementDaysLogged(workerId);
+    } catch (err) {
+      console.error('[AdminApi] Failed to increment days logged:', err.message);
+    }
+  }
 
   return apiResponse(200, {
     success: true,

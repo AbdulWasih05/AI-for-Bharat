@@ -94,8 +94,8 @@ function buildNotificationMessage(type, language, worker, result, error) {
 
     // Attendance flow (Phase 3)
     attendance_confirmed: {
-      hi: `${name}, aapki attendance log ho gayi! Din ${worker.total_days_logged || 0} verified. ${90 - (worker.total_days_logged || 0)} din aur baaki hain.`,
-      en: `${name}, attendance logged! Day ${worker.total_days_logged || 0} verified. ${90 - (worker.total_days_logged || 0)} days remaining.`,
+      hi: `${name}, aapki attendance log ho gayi! Din ${worker.total_days_logged || 0} verified. ${(config.certificateThreshold || 90) - (worker.total_days_logged || 0)} din aur baaki hain.`,
+      en: `${name}, attendance logged! Day ${worker.total_days_logged || 0} verified. ${(config.certificateThreshold || 90) - (worker.total_days_logged || 0)} days remaining.`,
     },
     attendance_rejected: {
       hi: `${name}, attendance verify nahi ho saki. Kripya clear selfie aur voice note ke saath dobara bhejiye.`,

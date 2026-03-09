@@ -34,7 +34,7 @@ const config = Object.freeze({
   whatsapp: {
     apiToken: process.env.WHATSAPP_API_TOKEN || '',
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || 'nirman-mitra-verify-token',
-    apiBaseUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v21.0',
+    apiBaseUrl: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com/v22.0',
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_ID || '',
   },
 
@@ -53,6 +53,13 @@ const config = Object.freeze({
 
   // Rekognition
   rekognitionCollectionId: process.env.REKOGNITION_COLLECTION_ID || 'nirman-mitra-workers',
+
+  // Lex V2 (Layer 1 of Three-Layer Voice Architecture)
+  lex: {
+    botId: process.env.LEX_BOT_ID || '',
+    botAliasId: process.env.LEX_BOT_ALIAS_ID || '',
+    localeId: process.env.LEX_LOCALE_ID || 'en_US',
+  },
 
   // Bedrock
   bedrock: {

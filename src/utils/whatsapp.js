@@ -47,8 +47,13 @@ export async function sendTextMessage(phoneNumber, text) {
     return { success: true, demo: true, messageId: `demo-${Date.now()}` };
   }
 
-  const response = await axios.post(apiUrl(), payload, { headers: headers() });
-  return { success: true, messageId: response.data.messages?.[0]?.id };
+  try {
+    const response = await axios.post(apiUrl(), payload, { headers: headers() });
+    return { success: true, messageId: response.data.messages?.[0]?.id };
+  } catch (err) {
+    console.error('[WhatsApp] sendText failed:', err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
+  }
 }
 
 /**
@@ -69,8 +74,13 @@ export async function sendAudioMessage(phoneNumber, audioUrl) {
     return { success: true, demo: true, messageId: `demo-${Date.now()}` };
   }
 
-  const response = await axios.post(apiUrl(), payload, { headers: headers() });
-  return { success: true, messageId: response.data.messages?.[0]?.id };
+  try {
+    const response = await axios.post(apiUrl(), payload, { headers: headers() });
+    return { success: true, messageId: response.data.messages?.[0]?.id };
+  } catch (err) {
+    console.error('[WhatsApp] sendAudio failed:', err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
+  }
 }
 
 /**
@@ -125,6 +135,39 @@ export async function sendDocumentMessage(phoneNumber, docUrl, filename, caption
 }
 
 /**
+ * Send a location request message via WhatsApp
+ * Shows a "Send Location" button — worker just taps it, no typing needed.
+ * @param {string} phoneNumber
+ * @param {string} text - Message body shown above the button
+ */
+export async function sendLocationRequest(phoneNumber, text) {
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: phoneNumber,
+    type: 'interactive',
+    interactive: {
+      type: 'location_request_message',
+      body: { text },
+      action: { name: 'send_location' },
+    },
+  };
+
+  if (isDemoMode() || noWhatsAppToken()) {
+    console.log(`[WhatsApp STUB] LocationRequest → ${phoneNumber}: ${text}`);
+    return { success: true, demo: true, messageId: `demo-${Date.now()}` };
+  }
+
+  try {
+    const response = await axios.post(apiUrl(), payload, { headers: headers() });
+    return { success: true, messageId: response.data.messages?.[0]?.id };
+  } catch (err) {
+    console.error('[WhatsApp] sendLocationRequest failed:', err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
+  }
+}
+
+/**
  * Download media from WhatsApp by media ID
  * Used when workers send images/audio — fetch the binary content.
  * @param {string} mediaId - WhatsApp media ID from webhook payload
@@ -140,20 +183,25 @@ export async function downloadMedia(mediaId) {
     };
   }
 
-  // Step 1: Get media URL from WhatsApp
-  const mediaInfo = await axios.get(`${API_BASE}/${mediaId}`, { headers: headers() });
-  const mediaUrl = mediaInfo.data.url;
+  try {
+    // Step 1: Get media URL from WhatsApp
+    const mediaInfo = await axios.get(`${API_BASE}/${mediaId}`, { headers: headers() });
+    const mediaUrl = mediaInfo.data.url;
 
-  // Step 2: Download the actual media binary
-  const mediaResponse = await axios.get(mediaUrl, {
-    headers: headers(),
-    responseType: 'arraybuffer',
-  });
+    // Step 2: Download the actual media binary
+    const mediaResponse = await axios.get(mediaUrl, {
+      headers: headers(),
+      responseType: 'arraybuffer',
+    });
 
-  return {
-    buffer: Buffer.from(mediaResponse.data),
-    contentType: mediaResponse.headers['content-type'] || 'application/octet-stream',
-  };
+    return {
+      buffer: Buffer.from(mediaResponse.data),
+      contentType: mediaResponse.headers['content-type'] || 'application/octet-stream',
+    };
+  } catch (err) {
+    console.error('[WhatsApp] downloadMedia failed:', err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
+  }
 }
 
 /**
@@ -221,6 +269,7 @@ export default {
   sendAudioMessage,
   sendImageMessage,
   sendDocumentMessage,
+  sendLocationRequest,
   downloadMedia,
   parseWebhookMessage,
 };

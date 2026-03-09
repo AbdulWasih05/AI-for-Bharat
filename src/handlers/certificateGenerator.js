@@ -156,7 +156,8 @@ async function generateCertificate(workerId, event) {
   );
 
   // Generate QR code data (verification URL)
-  const verificationUrl = `${config.environment === 'prod' ? 'https://api.nirmanmitra.in' : 'https://api-dev.nirmanmitra.in'}/api/certificate/${verificationHash}/verify`;
+  const baseUrl = process.env.API_GATEWAY_URL || `https://ghkeex2vt7.execute-api.ap-south-1.amazonaws.com/${config.environment}`;
+  const verificationUrl = `${baseUrl}/api/certificate/${verificationHash}/verify`;
 
   // Store in Certificates table
   const certificateRecord = {
@@ -332,7 +333,8 @@ function buildCertificatePdf(certData, verificationHash, bocwReference) {
       .text('[QR CODE]', qrX, y + 30, { width: qrBoxSize, align: 'center' })
       .text('Scan to verify', qrX, y + 44, { width: qrBoxSize, align: 'center' });
 
-    const verificationUrl = `${config.environment === 'prod' ? 'https://api.nirmanmitra.in' : 'https://api-dev.nirmanmitra.in'}/api/certificate/${verificationHash}/verify`;
+    const baseUrl = process.env.API_GATEWAY_URL || `https://ghkeex2vt7.execute-api.ap-south-1.amazonaws.com/${config.environment}`;
+  const verificationUrl = `${baseUrl}/api/certificate/${verificationHash}/verify`;
     doc
       .fontSize(7)
       .font('Helvetica')

@@ -12,7 +12,7 @@ import {
 } from '@aws-sdk/client-rekognition';
 import config, { isDemoMode } from '../utils/config.js';
 import { putItem, getItem, updateItem, getWorkerByPhone, saveConversationState } from '../utils/dynamodb.js';
-import { uploadWorkerMedia } from '../utils/s3.js';
+import { uploadWorkerMedia, uploadToS3 } from '../utils/s3.js';
 import { encryptAadhaar, getAadhaarLast4 } from '../utils/kms.js';
 import {
   detectLanguage,
@@ -21,6 +21,7 @@ import {
   getGreetingMessage,
   getStepPrompt,
 } from './voiceProcessor.js';
+import { withRetry } from '../utils/retryHelper.js';
 import {
   extractAadhaarFields,
   extractBankFields,
@@ -153,7 +154,8 @@ export async function handleNameCapture(workerId, audioBuffer, textMessage, lang
   }
 
   // Clean up the name
-  name = name.replace(/[^\w\s.]/gi, '').trim();
+  // Allow Unicode letters (Hindi, Tamil, etc.) + spaces + dots
+  name = name.replace(/[^\p{L}\p{M}\s.]/gu, '').trim();
   if (!name || name.length < 2) {
     const responseText = getStepPrompt('awaiting_name', language);
     const audioUrl = await generateAndUploadVoice(workerId, responseText, language, 'name-retry');
@@ -309,6 +311,14 @@ export async function handleSelfieCapture(workerId, imageBuffer, language = 'hi'
 
   // Upload to S3 (raw — will be deleted by 90d lifecycle)
   await uploadWorkerMedia(workerId, 'selfie', imageBuffer, 'image/jpeg');
+  // Also save as selfie-latest.jpg for face comparison during attendance
+  await uploadToS3(
+    config.buckets.mediaRaw,
+    `workers/${workerId}/selfie-latest.jpg`,
+    imageBuffer,
+    'image/jpeg',
+    { worker_id: workerId, media_type: 'selfie-latest' },
+  );
 
   try {
     let faceId;
@@ -319,15 +329,18 @@ export async function handleSelfieCapture(workerId, imageBuffer, language = 'hi'
       console.log(`[Registration DEMO] Simulated face index: ${faceId}`);
     } else {
       // Index face in Rekognition collection
-      const indexResult = await rekognitionClient.send(
-        new IndexFacesCommand({
-          CollectionId: COLLECTION_ID,
-          Image: { Bytes: imageBuffer },
-          ExternalImageId: workerId,
-          MaxFaces: 1,
-          DetectionAttributes: ['ALL'],
-          QualityFilter: 'AUTO',
-        }),
+      const indexResult = await withRetry(
+        () => rekognitionClient.send(
+          new IndexFacesCommand({
+            CollectionId: COLLECTION_ID,
+            Image: { Bytes: imageBuffer },
+            ExternalImageId: workerId,
+            MaxFaces: 1,
+            DetectionAttributes: ['ALL'],
+            QualityFilter: 'AUTO',
+          }),
+        ),
+        { label: 'Rekognition:IndexFaces' },
       );
 
       const faceRecords = indexResult.FaceRecords || [];
@@ -360,13 +373,13 @@ export async function handleSelfieCapture(workerId, imageBuffer, language = 'hi'
       { ':faceId': faceId, ':ts': new Date().toISOString() },
     );
 
-    // Move to bank passbook step
+    // Move to location step
     const responseText = language === 'en'
-      ? 'Selfie saved! Now please send a photo of your bank passbook.'
-      : 'Selfie save ho gaya! Ab kripya apne bank passbook ka photo bhejiye.';
+      ? 'Selfie saved! Now share your work site location.'
+      : 'Selfie save ho gaya! Ab apne kaam ki jagah ka location share karein.';
     const audioUrl = await generateAndUploadVoice(workerId, responseText, language, 'selfie-saved');
 
-    return { success: true, faceId, responseText, audioUrl, nextStep: 'awaiting_passbook' };
+    return { success: true, faceId, responseText, audioUrl, nextStep: 'awaiting_registration_location' };
   } catch (err) {
     console.error('Selfie processing failed:', err.message);
     const responseText = getStepPrompt('error', language);

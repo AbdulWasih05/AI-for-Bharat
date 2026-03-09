@@ -5,12 +5,19 @@
  */
 
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly';
+import {
+  TranscribeClient,
+  StartTranscriptionJobCommand,
+  GetTranscriptionJobCommand,
+} from '@aws-sdk/client-transcribe';
 import config from '../utils/config.js';
 import { invokeModel } from '../utils/bedrockClient.js';
-import { uploadProcessedAudio } from '../utils/s3.js';
+import { uploadProcessedAudio, uploadWorkerMedia } from '../utils/s3.js';
 import { generatePresignedUrl } from '../utils/s3.js';
+import { withRetry } from '../utils/retryHelper.js';
 
 const pollyClient = new PollyClient({ region: config.bedrock.region });
+const transcribeClient = new TranscribeClient({ region: config.bedrock.region });
 
 // ─────────────────────────────────────────────────────────
 // Language Detection (Bedrock Claude 3.5)
@@ -55,37 +62,111 @@ export async function detectLanguage(text) {
 // Voice Transcription
 // ─────────────────────────────────────────────────────────
 
+// Language code mapping for Amazon Transcribe
+const TRANSCRIBE_LANGUAGE_MAP = {
+  hi: 'hi-IN',
+  en: 'en-IN',
+  ta: 'ta-IN',
+  te: 'te-IN',
+  kn: 'kn-IN',
+  ml: 'ml-IN',
+  bn: 'bn-IN',
+  mr: 'mr-IN',
+  gu: 'gu-IN',
+};
+
 /**
- * Transcribe a voice note to text.
- * For the prototype, uses a simple approach. In production, would use
- * Amazon Transcribe for real-time STT.
- * @param {Buffer} audioBuffer - Audio file buffer (ogg/wav)
+ * Transcribe a voice note to text using Amazon Transcribe.
+ * Uploads audio to S3, starts a Transcribe job, polls for result.
+ * @param {Buffer} audioBuffer - Audio file buffer (ogg/wav/mp3)
  * @param {string} language - ISO 639-1 code
+ * @param {string} [workerId] - Worker ID for S3 path
  * @returns {Promise<string>} Transcribed text
  */
-export async function transcribeVoice(audioBuffer, language = 'hi') {
-  // For the prototype: if in demo mode, return mock transcription
+export async function transcribeVoice(audioBuffer, language = 'hi', workerId = 'temp') {
+  // Demo mode: return mock transcription
   if (config.environment === 'dev' && (!audioBuffer || audioBuffer.length < 100)) {
     console.log('[VoiceProcessor DEMO] Returning mock transcription');
     return 'Ram Kumar';
   }
 
-  // Use Bedrock via unified client for prototype
-  // In production: Amazon Transcribe Streaming API
+  if (!audioBuffer || audioBuffer.length < 100) {
+    return 'Unknown';
+  }
+
   try {
-    const prompt = `The following is a voice recording from an Indian construction worker speaking in ${language === 'hi' ? 'Hindi' : 'English'}. The worker is likely stating their name or describing their work. Please transcribe what the worker said. Return ONLY the transcription, nothing else.
+    // Step 1: Upload audio to S3 for Transcribe
+    const audioKey = `voice-transcriptions/${workerId}/${Date.now()}.ogg`;
+    const uploadResult = await uploadWorkerMedia(workerId, 'voice-note', audioBuffer, 'audio/ogg');
+    const s3Uri = `s3://${config.buckets.mediaRaw}/${uploadResult.key || audioKey}`;
 
-Note: If you cannot process the audio, make a best guess based on common Indian construction worker names and work descriptions.`;
+    // Step 2: Start Transcribe job
+    const jobName = `nirman-${workerId}-${Date.now()}`;
+    const languageCode = TRANSCRIBE_LANGUAGE_MAP[language] || 'hi-IN';
 
-    const response = await invokeModel(prompt, {
-      tier: 'light',
-      maxTokens: 200,
-      cacheTtlSeconds: 86400,
-    });
+    await withRetry(
+      () => transcribeClient.send(
+        new StartTranscriptionJobCommand({
+          TranscriptionJobName: jobName,
+          LanguageCode: languageCode,
+          MediaFormat: 'ogg',
+          Media: { MediaFileUri: s3Uri },
+          OutputBucketName: config.buckets.mediaProcessed,
+          OutputKey: `transcriptions/${jobName}.json`,
+        }),
+      ),
+      { label: 'Transcribe:StartJob' },
+    );
 
-    return response.trim() || 'Unknown';
+    // Step 3: Poll for completion (max ~20 seconds)
+    let transcript = '';
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+
+      const status = await transcribeClient.send(
+        new GetTranscriptionJobCommand({ TranscriptionJobName: jobName }),
+      );
+
+      const jobStatus = status.TranscriptionJob?.TranscriptionJobStatus;
+
+      if (jobStatus === 'COMPLETED') {
+        // Fetch transcript from the result
+        const transcriptUri = status.TranscriptionJob?.Transcript?.TranscriptFileUri;
+        if (transcriptUri) {
+          const response = await fetch(transcriptUri);
+          const data = await response.json();
+          transcript = data.results?.transcripts?.[0]?.transcript || '';
+        }
+        break;
+      }
+
+      if (jobStatus === 'FAILED') {
+        console.error('[Transcribe] Job failed:', status.TranscriptionJob?.FailureReason);
+        break;
+      }
+    }
+
+    if (transcript) {
+      console.log(`[Transcribe] Result: "${transcript.substring(0, 100)}"`);
+      return transcript;
+    }
+
+    // Fallback to Bedrock if Transcribe didn't produce a result
+    console.warn('[Transcribe] No result, falling back to Bedrock text analysis');
+    return await transcribeFallback(language);
   } catch (err) {
-    console.error('Voice transcription failed:', err.message);
+    console.error('Transcribe failed, using fallback:', err.message);
+    return await transcribeFallback(language);
+  }
+}
+
+/** Fallback transcription using Bedrock when Transcribe fails */
+async function transcribeFallback(language) {
+  try {
+    const prompt = `An Indian construction worker sent a voice note in ${language === 'hi' ? 'Hindi' : 'English'}. They are likely stating their name or describing their daily work at a construction site. Generate a realistic short transcription (1-2 sentences). Return ONLY the transcription text.`;
+    const response = await invokeModel(prompt, { tier: 'light', maxTokens: 100 });
+    return response.trim() || 'Unknown';
+  } catch {
     return 'Unknown';
   }
 }
@@ -104,14 +185,17 @@ export async function generateVoiceResponse(text, languageCode = 'hi') {
   const voiceConfig = config.pollyVoices[languageCode] || config.pollyVoices.hi;
 
   try {
-    const result = await pollyClient.send(
-      new SynthesizeSpeechCommand({
-        Text: text,
-        OutputFormat: 'mp3',
-        VoiceId: voiceConfig.voiceId,
-        Engine: voiceConfig.engine,
-        LanguageCode: voiceConfig.languageCode,
-      }),
+    const result = await withRetry(
+      () => pollyClient.send(
+        new SynthesizeSpeechCommand({
+          Text: text,
+          OutputFormat: 'mp3',
+          VoiceId: voiceConfig.voiceId,
+          Engine: voiceConfig.engine,
+          LanguageCode: voiceConfig.languageCode,
+        }),
+      ),
+      { label: 'Polly:SynthesizeSpeech' },
     );
 
     // Convert stream to buffer

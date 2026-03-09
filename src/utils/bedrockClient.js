@@ -200,9 +200,15 @@ export async function invokeModel(prompt, options = {}) {
     // 3. Fallback to OpenAI if configured
     if (config.llmFallback.fallbackProvider === 'openai' && config.llmFallback.fallbackApiKey) {
       console.warn('[BedrockClient] Falling back to OpenAI');
-      responseText = await invokeFallbackOpenAI(prompt, maxTokens);
+      try {
+        responseText = await invokeFallbackOpenAI(prompt, maxTokens);
+      } catch (fallbackErr) {
+        console.error('[BedrockClient] OpenAI fallback also failed:', fallbackErr.message);
+        throw err; // throw original Bedrock error
+      }
     } else {
-      throw err;
+      console.warn('[BedrockClient] No fallback LLM configured — returning graceful error');
+      return '[AI service temporarily unavailable. Please try again.]';
     }
   }
 

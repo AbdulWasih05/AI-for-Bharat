@@ -8,6 +8,7 @@ import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract
 import { RekognitionClient, DetectFacesCommand } from '@aws-sdk/client-rekognition';
 import config, { isDemoMode } from '../utils/config.js';
 import { invokeModel } from '../utils/bedrockClient.js';
+import { withRetry } from '../utils/retryHelper.js';
 
 const IS_DEMO = isDemoMode();
 const textractClient = IS_DEMO ? null : new TextractClient({ region: config.bedrock.region });
@@ -31,11 +32,14 @@ export async function extractAadhaarFields(imageBuffer) {
     };
   }
 
-  const textractResult = await textractClient.send(
-    new AnalyzeDocumentCommand({
-      Document: { Bytes: imageBuffer },
-      FeatureTypes: ['FORMS'],
-    }),
+  const textractResult = await withRetry(
+    () => textractClient.send(
+      new AnalyzeDocumentCommand({
+        Document: { Bytes: imageBuffer },
+        FeatureTypes: ['FORMS'],
+      }),
+    ),
+    { label: 'Textract:Aadhaar' },
   );
 
   // Parse Textract FORMS response to extract key-value pairs
@@ -73,11 +77,14 @@ export async function extractBankFields(imageBuffer) {
     };
   }
 
-  const textractResult = await textractClient.send(
-    new AnalyzeDocumentCommand({
-      Document: { Bytes: imageBuffer },
-      FeatureTypes: ['FORMS'],
-    }),
+  const textractResult = await withRetry(
+    () => textractClient.send(
+      new AnalyzeDocumentCommand({
+        Document: { Bytes: imageBuffer },
+        FeatureTypes: ['FORMS'],
+      }),
+    ),
+    { label: 'Textract:BankPassbook' },
   );
 
   const kvPairs = parseTextractForms(textractResult);
@@ -160,11 +167,14 @@ export async function assessDocumentQuality(imageBuffer) {
   }
 
   try {
-    const result = await textractClient.send(
-      new AnalyzeDocumentCommand({
-        Document: { Bytes: imageBuffer },
-        FeatureTypes: ['FORMS'],
-      }),
+    const result = await withRetry(
+      () => textractClient.send(
+        new AnalyzeDocumentCommand({
+          Document: { Bytes: imageBuffer },
+          FeatureTypes: ['FORMS'],
+        }),
+      ),
+      { label: 'Textract:QualityAssess' },
     );
     return calculateAverageConfidence(result);
   } catch (err) {

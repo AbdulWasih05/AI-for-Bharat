@@ -9,22 +9,29 @@
  * 3. Active worker → Attendance check-in (Triple Verification) / progress queries
  */
 
+import { LexRuntimeV2Client, RecognizeTextCommand } from '@aws-sdk/client-lex-runtime-v2';
 import config, { apiResponse } from '../utils/config.js';
 import { getWorkerByPhone, getConversationState, saveConversationState, getItem } from '../utils/dynamodb.js';
-import { parseWebhookMessage, downloadMedia, sendTextMessage, sendAudioMessage } from '../utils/whatsapp.js';
+import { parseWebhookMessage, downloadMedia, sendTextMessage, sendAudioMessage, sendLocationRequest } from '../utils/whatsapp.js';
 import { uploadWorkerMedia } from '../utils/s3.js';
 import {
   handleGreeting,
   handleNameCapture,
   handleAadhaarUpload,
   handleSelfieCapture,
-  handleBankPassbook,
   finalizeRegistration,
 } from '../services/registration.js';
 import { transcribeVoice, detectLanguage, generateAndUploadVoice } from '../services/voiceProcessor.js';
 import { invokeModel } from '../utils/bedrockClient.js';
+import { withRetry } from '../utils/retryHelper.js';
 import { handler as attendanceHandler } from './attendanceProcessor.js';
 import { handler as certificateHandler } from './certificateGenerator.js';
+
+// Lex V2 client — Layer 1 of Three-Layer Voice Architecture (PRD §6.5)
+const lexClient = new LexRuntimeV2Client({ region: config.bedrock.region });
+const LEX_BOT_ID = process.env.LEX_BOT_ID || '';
+const LEX_BOT_ALIAS_ID = process.env.LEX_BOT_ALIAS_ID || '';
+const LEX_LOCALE = process.env.LEX_LOCALE_ID || 'en_US';
 
 export const handler = async (event) => {
   const method = event.httpMethod || event.requestContext?.http?.method;
@@ -163,8 +170,8 @@ async function handleOnboardingWorker(workerId, worker, message) {
         result = await processSelfieStep(workerId, message, language);
         break;
 
-      case 'awaiting_passbook':
-        result = await processPassbookStep(workerId, message, language);
+      case 'awaiting_registration_location':
+        result = await processRegistrationLocationStep(workerId, message, language);
         break;
 
       case 'finalizing':
@@ -179,6 +186,56 @@ async function handleOnboardingWorker(workerId, worker, message) {
             : 'Kripya apna naam bhejiye registration jari rakhne ke liye.',
           nextStep: 'awaiting_name',
         };
+    }
+
+    // If next step is registration location, send the location request button
+    if (result.nextStep === 'awaiting_registration_location') {
+      await sendTextMessage(phoneNumber, result.responseText);
+      if (result.audioUrl) {
+        await sendAudioMessage(phoneNumber, result.audioUrl);
+      }
+      // Send location request button
+      try {
+        const locText = language === 'en'
+          ? 'Tap the button below to share your work site location.'
+          : 'Apne kaam ki jagah ka location share karne ke liye neeche button dabayein.';
+        await sendLocationRequest(phoneNumber, locText);
+      } catch (err) {
+        console.warn('[Registration] Location request button failed:', err.message);
+      }
+
+      await saveConversationState(workerId, sessionId, {
+        current_step: 'awaiting_registration_location',
+        preferred_language: language,
+        retry_count: 0,
+      });
+
+      return apiResponse(200, {
+        status: 'onboarding_step_processed',
+        step: currentStep,
+        nextStep: 'awaiting_registration_location',
+      });
+    }
+
+    // If next step is finalizing, auto-chain immediately (don't wait for another message)
+    if (result.nextStep === 'finalizing') {
+      await sendTextMessage(phoneNumber, result.responseText);
+      if (result.audioUrl) {
+        await sendAudioMessage(phoneNumber, result.audioUrl);
+      }
+
+      // Auto-finalize
+      const finalResult = await finalizeRegistration(workerId, language);
+      await sendTextMessage(phoneNumber, finalResult.responseText);
+      if (finalResult.audioUrl) {
+        await sendAudioMessage(phoneNumber, finalResult.audioUrl);
+      }
+
+      return apiResponse(200, {
+        status: 'onboarding_complete',
+        step: 'finalizing',
+        nextStep: 'completed',
+      });
     }
 
     // Update conversation state with next step
@@ -267,18 +324,46 @@ async function processSelfieStep(workerId, message, language) {
   return handleSelfieCapture(workerId, media.buffer, language);
 }
 
-async function processPassbookStep(workerId, message, language) {
-  if (message.type !== 'image') {
-    return {
-      responseText: language === 'en'
-        ? 'Please send a photo of your bank passbook.'
-        : 'Kripya apne bank passbook ka photo bhejiye.',
-      nextStep: 'awaiting_passbook',
-    };
+async function processRegistrationLocationStep(workerId, message, language) {
+  if (message.type === 'location') {
+    // Store the worker's site location
+    const { updateItem } = await import('../utils/dynamodb.js');
+    await updateItem(
+      config.tables.workers,
+      { worker_id: workerId },
+      'SET registration_location = :loc, updated_at = :ts',
+      {
+        ':loc': {
+          latitude: message.latitude,
+          longitude: message.longitude,
+        },
+        ':ts': new Date().toISOString(),
+      },
+    );
+
+    const responseText = language === 'en'
+      ? 'Location saved! Finalizing your registration...'
+      : 'Location save ho gaya! Aapka registration poora kar rahe hain...';
+    const audioUrl = await generateAndUploadVoice(workerId, responseText, language, 'location-saved');
+    return { responseText, audioUrl, nextStep: 'finalizing' };
   }
 
-  const media = await downloadMedia(message.mediaId);
-  return handleBankPassbook(workerId, media.buffer, language);
+  // If they send text "skip" or "ok", skip location
+  if (message.type === 'text') {
+    const lower = (message.text || '').toLowerCase().trim();
+    if (/\b(ok|skip|done|haan|bas)\b/.test(lower)) {
+      const responseText = language === 'en'
+        ? 'Location skipped. Finalizing your registration...'
+        : 'Location skip kiya. Aapka registration poora kar rahe hain...';
+      return { responseText, audioUrl: null, nextStep: 'finalizing' };
+    }
+  }
+
+  // Not a location message — re-prompt
+  const responseText = language === 'en'
+    ? 'Please share your work site location using the button, or send "ok" to skip.'
+    : 'Kripya apne kaam ki jagah ka location share karein, ya "ok" bhejiye skip karne ke liye.';
+  return { responseText, audioUrl: null, nextStep: 'awaiting_registration_location' };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -289,28 +374,89 @@ async function handleActiveWorker(workerId, worker, message) {
   const phoneNumber = message.from;
   const language = worker.preferred_language || 'hi';
 
-  // Text messages: progress queries / help
+  // Check attendance flow state first
+  const state = await getConversationState(workerId);
+  const attendanceStep = state?.current_step;
+
+  // Text messages — check if we're in attendance flow first
   if (message.type === 'text') {
+    // If awaiting voice, "ok"/"done"/"skip"/any short text skips voice and processes attendance
+    if (attendanceStep === 'awaiting_voice' && state?.pending_selfie_key) {
+      const lower = (message.text || '').toLowerCase().trim();
+      if (lower.length < 20 || /\b(ok|done|skip|haan|ha|theek|bas)\b/.test(lower)) {
+        return await processFullAttendance(workerId, worker, language, state, null);
+      }
+      // Longer text — use as voice transcription directly
+      return await processFullAttendance(workerId, worker, language, state, message.text);
+    }
+    // If awaiting location, "skip" skips GPS
+    if (attendanceStep === 'awaiting_location' && state?.pending_selfie_key) {
+      const lower = (message.text || '').toLowerCase().trim();
+      if (/\b(ok|skip|done|haan|bas)\b/.test(lower)) {
+        // Skip location, go to voice request
+        await saveConversationState(workerId, workerId, {
+          ...state,
+          current_step: 'awaiting_voice',
+          pending_latitude: null,
+          pending_longitude: null,
+        });
+        const voiceText = language === 'en'
+          ? 'Now hold the mic button and tell us:\n• What work did you do today?\n• Which floor or area?\n\nExample: "Today I did painting work on 3rd floor"\n\nOr send "ok" to skip.'
+          : 'Ab mic button dabake bataiye:\n• Aaj kya kaam kiya?\n• Kaun si jagah pe?\n\nJaise: "Aaj maine 3rd floor pe painting ka kaam kiya"\n\nYa "ok" bhejiye skip karne ke liye.';
+        await sendTextMessage(phoneNumber, voiceText);
+        return apiResponse(200, { status: 'location_skipped_awaiting_voice', workerId });
+      }
+    }
     return await handleActiveWorkerText(workerId, worker, message);
   }
 
-  // Image + optional audio: attendance check-in (Triple Verification)
+  // Image: selfie for attendance — store it and request location
   if (message.type === 'image') {
-    return await handleAttendanceCheckIn(workerId, worker, message, language);
+    if (attendanceStep === 'awaiting_location' || attendanceStep === 'awaiting_voice') {
+      // Worker sent another selfie — restart attendance flow
+    }
+    return await handleSelfiePendingLocation(workerId, worker, message, language);
   }
 
-  // Audio only: voice conversational AI — transcribe → detect intent → execute → respond
-  if (message.type === 'audio') {
-    return await handleVoiceConversation(workerId, worker, message, language);
-  }
-
-  // Location message: acknowledge and ask for selfie
+  // Location message: store GPS, then ask for voice note
   if (message.type === 'location') {
+    if (attendanceStep === 'awaiting_location' && state?.pending_selfie_key) {
+      // Store location, move to voice step
+      await saveConversationState(workerId, workerId, {
+        ...state,
+        current_step: 'awaiting_voice',
+        pending_latitude: message.latitude,
+        pending_longitude: message.longitude,
+      });
+      const voiceText = language === 'en'
+        ? 'Location received! Now hold the mic button and tell us:\n• What work did you do today?\n• Which floor or area?\n\nExample: "Today I did painting work on 3rd floor"\n\nOr send "ok" to skip.'
+        : 'Location mil gaya! Ab mic button dabake bataiye:\n• Aaj kya kaam kiya?\n• Kaun si jagah pe?\n\nJaise: "Aaj maine 3rd floor pe painting ka kaam kiya"\n\nYa "ok" bhejiye skip karne ke liye.';
+      await sendTextMessage(phoneNumber, voiceText);
+      return apiResponse(200, { status: 'location_stored_awaiting_voice', workerId });
+    }
+    // Location without prior selfie
     const responseText = language === 'en'
-      ? 'Location received! Now send a selfie and voice note to complete attendance.'
-      : 'Location mil gaya! Ab selfie aur voice note bhejiye attendance poora karne ke liye.';
+      ? 'Location received! Now send a selfie to start attendance.'
+      : 'Location mil gaya! Ab selfie bhejiye attendance shuru karne ke liye.';
     await sendTextMessage(phoneNumber, responseText);
-    return apiResponse(200, { status: 'location_received', workerId });
+    return apiResponse(200, { status: 'location_received_no_selfie', workerId });
+  }
+
+  // Audio: if awaiting voice for attendance, use it. Otherwise voice AI conversation.
+  if (message.type === 'audio') {
+    if (attendanceStep === 'awaiting_voice' && state?.pending_selfie_key) {
+      // Transcribe and process attendance
+      try {
+        const media = await downloadMedia(message.mediaId);
+        const transcription = await transcribeVoice(media.buffer, language);
+        console.log(`[Attendance Voice] Worker ${workerId}: "${transcription}"`);
+        return await processFullAttendance(workerId, worker, language, state, transcription || null);
+      } catch (err) {
+        console.warn('[Attendance Voice] Transcription failed, processing without:', err.message);
+        return await processFullAttendance(workerId, worker, language, state, null);
+      }
+    }
+    return await handleVoiceConversation(workerId, worker, message, language);
   }
 
   const responseText = language === 'en'
@@ -379,30 +525,93 @@ async function handleVoiceConversation(workerId, worker, message, language) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Intent Detection (Bedrock NLU — replaces Lex V2)
+// Intent Detection — Three-Layer Architecture (PRD §6.5)
+// Layer 1: Lex V2 (structured intents, confidence ≥ 70%)
+// Layer 2: Bedrock NLU (free-form, when Lex < 70%)
+// Layer 0: Fast keyword matching (no API call needed)
 // ─────────────────────────────────────────────────────────
+
+// Lex intent → our internal intent mapping
+const LEX_INTENT_MAP = {
+  CheckProgress: 'check_progress',
+  LogAttendance: 'log_attendance',
+  RequestCertificate: 'request_certificate',
+  GetHelp: 'help',
+  Greeting: 'greeting',
+  FallbackIntent: null, // Lex doesn't know → go to Bedrock
+};
 
 async function detectIntent(text, language) {
   const lower = (text || '').toLowerCase();
 
-  // Fast keyword matching first (no Bedrock call needed for obvious intents)
-  if (/\b(progress|status|kitne din|days|din|kaisa|update)\b/.test(lower)) {
-    return { type: 'check_progress', confidence: 95, transcript: text };
+  // Layer 0: Fast keyword matching (no API call needed for obvious intents)
+  // Demo triggers for showcasing review queue and certificate flow
+  if (/\b(test review|demo fail|demo review)\b/.test(lower)) {
+    return { type: 'demo_fail', confidence: 99, source: 'keyword', transcript: text };
   }
-  if (/\b(certificate|praman|patra|download|sanad)\b/.test(lower)) {
-    return { type: 'request_certificate', confidence: 95, transcript: text };
-  }
-  if (/\b(attendance|haziri|check.?in|selfie|log)\b/.test(lower)) {
-    return { type: 'log_attendance', confidence: 90, transcript: text };
-  }
-  if (/\b(help|madad|sahayata|kya kar|how|kaise)\b/.test(lower)) {
-    return { type: 'help', confidence: 90, transcript: text };
-  }
-  if (/\b(hello|hi|namaskar|namaste|good morning|suprabhat)\b/.test(lower)) {
-    return { type: 'greeting', confidence: 95, transcript: text };
+  if (/\b(test certificate|demo certificate|demo cert)\b/.test(lower)) {
+    return { type: 'demo_certificate', confidence: 99, source: 'keyword', transcript: text };
   }
 
-  // Bedrock NLU for ambiguous or complex queries
+  if (/\b(progress|status|kitne din|days|din|kaisa|update)\b/.test(lower)) {
+    return { type: 'check_progress', confidence: 95, source: 'keyword', transcript: text };
+  }
+  if (/\b(certificate|praman|patra|download|sanad)\b/.test(lower)) {
+    return { type: 'request_certificate', confidence: 95, source: 'keyword', transcript: text };
+  }
+  if (/\b(attendance|haziri|check.?in|selfie|log)\b/.test(lower)) {
+    return { type: 'log_attendance', confidence: 90, source: 'keyword', transcript: text };
+  }
+  if (/\b(help|madad|sahayata|kya kar|how|kaise)\b/.test(lower)) {
+    return { type: 'help', confidence: 90, source: 'keyword', transcript: text };
+  }
+  if (/\b(hello|hi|namaskar|namaste|good morning|suprabhat)\b/.test(lower)) {
+    return { type: 'greeting', confidence: 95, source: 'keyword', transcript: text };
+  }
+
+  // Layer 1: Lex V2 — structured intent recognition (if bot is configured)
+  if (LEX_BOT_ID && LEX_BOT_ALIAS_ID) {
+    try {
+      const lexResult = await withRetry(
+        () => lexClient.send(
+          new RecognizeTextCommand({
+            botId: LEX_BOT_ID,
+            botAliasId: LEX_BOT_ALIAS_ID,
+            localeId: LEX_LOCALE,
+            sessionId: `worker-${Date.now()}`,
+            text,
+          }),
+        ),
+        { label: 'LexV2:RecognizeText' },
+      );
+
+      const lexIntent = lexResult.interpretations?.[0];
+      const lexConfidence = Math.round(
+        (lexIntent?.nluConfidence?.score || 0) * 100,
+      );
+      const lexIntentName = lexIntent?.intent?.name;
+      const mappedIntent = LEX_INTENT_MAP[lexIntentName];
+
+      console.log(`[LexV2] Intent: ${lexIntentName}, Confidence: ${lexConfidence}%`);
+
+      // Use Lex result if confidence >= 70% and we have a valid mapping
+      if (mappedIntent && lexConfidence >= 70) {
+        return {
+          type: mappedIntent,
+          confidence: lexConfidence,
+          source: 'lex',
+          transcript: text,
+        };
+      }
+
+      // Lex < 70% or FallbackIntent → fall through to Bedrock (Layer 2)
+      console.log(`[LexV2] Low confidence (${lexConfidence}%), falling back to Bedrock NLU`);
+    } catch (err) {
+      console.warn('[LexV2] Failed, falling back to Bedrock NLU:', err.message);
+    }
+  }
+
+  // Layer 2: Bedrock NLU for ambiguous or complex queries
   try {
     const prompt = `You are the voice assistant for Nirman Mitra, a construction worker welfare platform. A worker sent a voice message. Classify their intent.
 
@@ -433,11 +642,12 @@ Respond in EXACTLY this JSON format (no markdown):
       type: result.intent || 'help',
       confidence: Math.min(100, Math.max(0, Number(result.confidence) || 70)),
       detail: result.detail || '',
+      source: 'bedrock',
       transcript: text,
     };
   } catch (err) {
     console.warn('[IntentDetection] Bedrock NLU failed, defaulting to help:', err.message);
-    return { type: 'help', confidence: 50, transcript: text };
+    return { type: 'help', confidence: 50, source: 'fallback', transcript: text };
   }
 }
 
@@ -453,6 +663,52 @@ async function executeIntent(intent, workerId, worker, phoneNumber, language) {
   const name = worker.name || '';
 
   switch (intent.type) {
+    case 'demo_fail': {
+      // Create a low-confidence attendance entry for review queue demo
+      const logDate = new Date().toISOString().split('T')[0];
+      const timestamp = new Date().toISOString();
+      const { putItem } = await import('../utils/dynamodb.js');
+      await putItem(config.tables.attendance, {
+        worker_id: workerId,
+        log_date: logDate,
+        timestamp,
+        site_id: 'SITE-DEMO-001',
+        site_name: 'Greenfield Metro Station',
+        verification_status: 'pending_review',
+        confidence: 52,
+        face_confidence: 48,
+        geo_confidence: 65,
+        voice_confidence: 40,
+        geo_location: { latitude: 'recorded', longitude: 'recorded', distance_meters: 380 },
+        voice_details: { activity: 'unclear audio', location_mention: null, is_work_related: false },
+        flagged_reason: 'Low face confidence: 48% | Voice note not work-related',
+        is_off_hours: false,
+        created_at: timestamp,
+      });
+      const responseText = language === 'en'
+        ? 'Attendance submitted for admin review due to low confidence. Check the admin dashboard review queue.'
+        : 'Attendance admin review ke liye bhej di gayi — confidence kam thi. Admin dashboard pe review queue dekhiye.';
+      await sendTextMessage(phoneNumber, responseText);
+      return apiResponse(200, { status: 'demo_fail_created', workerId });
+    }
+
+    case 'demo_certificate': {
+      // Fast-track certificate for demo: set days to threshold and generate
+      const { updateItem } = await import('../utils/dynamodb.js');
+      await updateItem(
+        config.tables.workers,
+        { worker_id: workerId },
+        'SET total_days_logged = :days',
+        { ':days': config.certificateThreshold },
+      );
+      const certText = language === 'en'
+        ? `Demo mode: Set your days to ${config.certificateThreshold}. Generating certificate now...`
+        : `Demo mode: Aapke din ${config.certificateThreshold} set kiye. Certificate bana rahe hain...`;
+      await sendTextMessage(phoneNumber, certText);
+      await triggerCertificateGeneration(workerId, phoneNumber, language);
+      return apiResponse(200, { status: 'demo_certificate_triggered', workerId });
+    }
+
     case 'check_progress': {
       const responseText = language === 'en'
         ? `${name}, you have logged ${daysLogged} of ${threshold} days (${pct}%). ${daysRemaining > 0 ? `${daysRemaining} days remaining.` : 'You are eligible for your certificate!'}`
@@ -476,8 +732,8 @@ async function executeIntent(intent, workerId, worker, phoneNumber, language) {
 
     case 'log_attendance': {
       const responseText = language === 'en'
-        ? 'To log attendance, please send a selfie photo along with a voice note describing your work today.'
-        : 'Attendance log karne ke liye, kripya apna selfie photo aur aaj ke kaam ka voice note bhejiye.';
+        ? 'To log attendance:\n1. Send a selfie photo\n2. Share your location (tap the button)\n3. Send a voice note about your work\n\nStart by sending a selfie!'
+        : 'Attendance ke liye:\n1. Selfie photo bhejiye\n2. Location share karein (button dabayein)\n3. Kaam ka voice note bhejiye\n\nPehle selfie bhejiye!';
       await sendTextAndVoice(phoneNumber, workerId, responseText, language, 'attendance-guide');
       return apiResponse(200, { status: 'attendance_guidance_sent', workerId, intent: intent.type });
     }
@@ -506,7 +762,12 @@ async function executeIntent(intent, workerId, worker, phoneNumber, language) {
 // ─────────────────────────────────────────────────────────
 
 async function sendTextAndVoice(phoneNumber, workerId, text, language, label) {
-  await sendTextMessage(phoneNumber, text);
+  try {
+    await sendTextMessage(phoneNumber, text);
+  } catch (err) {
+    console.error('[sendTextAndVoice] sendText failed:', err.response?.status, err.response?.data?.error?.message || err.message);
+    return; // Don't attempt voice if text itself failed
+  }
   try {
     const audioUrl = await generateAndUploadVoice(workerId, text, language, label);
     if (audioUrl) {
@@ -518,7 +779,146 @@ async function sendTextAndVoice(phoneNumber, workerId, text, language, label) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Active Worker: Attendance Check-In (Triple Verification)
+// Step 1: Worker sends selfie → store it, request location
+// ─────────────────────────────────────────────────────────
+
+async function handleSelfiePendingLocation(workerId, worker, message, language) {
+  const phoneNumber = message.from;
+
+  try {
+    // Download and upload selfie to S3
+    const media = await downloadMedia(message.mediaId);
+    const uploadResult = await uploadWorkerMedia(workerId, 'checkin-selfie', media.buffer, 'image/jpeg');
+
+    // Save selfie key in conversation state — wait for location
+    await saveConversationState(workerId, workerId, {
+      current_step: 'awaiting_location',
+      pending_selfie_key: uploadResult.key,
+      pending_voice: message.caption || '',
+      preferred_language: language,
+    });
+
+    // Send location request button
+    const locationText = language === 'en'
+      ? 'Selfie received! Now share your location to complete attendance. Tap the button below.'
+      : 'Selfie mil gaya! Ab apna location share karein attendance poora karne ke liye. Neeche button dabayein.';
+
+    try {
+      await sendLocationRequest(phoneNumber, locationText);
+    } catch (err) {
+      // If location_request_message not supported, skip to voice step
+      console.warn('[Attendance] Location request failed, skipping to voice step:', err.message);
+      await saveConversationState(workerId, workerId, {
+        current_step: 'awaiting_voice',
+        pending_selfie_key: uploadResult.key,
+        pending_latitude: null,
+        pending_longitude: null,
+        preferred_language: language,
+      });
+      const voiceText = language === 'en'
+        ? 'Selfie received! Hold the mic button and tell us:\n• What work did you do today?\n• Which floor or area?\n\nExample: "Today I did painting work on 3rd floor"\n\nOr send "ok" to skip.'
+        : 'Selfie mil gaya! Mic button dabake bataiye:\n• Aaj kya kaam kiya?\n• Kaun si jagah pe?\n\nJaise: "Aaj maine 3rd floor pe painting ka kaam kiya"\n\nYa "ok" bhejiye skip karne ke liye.';
+      await sendTextMessage(phoneNumber, voiceText);
+    }
+
+    return apiResponse(200, { status: 'selfie_stored_awaiting_location', workerId });
+  } catch (err) {
+    console.error('Selfie pending location error:', err);
+    await sendTextMessage(phoneNumber, language === 'en'
+      ? 'Something went wrong. Please try sending your selfie again.'
+      : 'Kuch problem ho gayi. Kripya dobara selfie bhejiye.');
+    return apiResponse(200, { status: 'error', workerId, error: err.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Step 3: Process full attendance (selfie + location + voice)
+// Called after all inputs collected (voice may be null/skipped)
+// ─────────────────────────────────────────────────────────
+
+async function processFullAttendance(workerId, worker, language, state, voiceTranscription) {
+  const phoneNumber = worker.phone_number;
+
+  try {
+    const selfieKey = state.pending_selfie_key;
+    const latitude = state.pending_latitude || (config.environment === 'dev' ? 28.6139 : null);
+    const longitude = state.pending_longitude || (config.environment === 'dev' ? 77.2090 : null);
+    const voice = voiceTranscription || 'construction work at site';
+
+    // Clear the pending state
+    await saveConversationState(workerId, workerId, {
+      current_step: 'active',
+      pending_selfie_key: null,
+      pending_latitude: null,
+      pending_longitude: null,
+      preferred_language: language,
+    });
+
+    // Run Triple Verification — all three in parallel
+    const [faceResult, geoResult, voiceResult] = await Promise.all([
+      attendanceHandler({ task: 'face_verify', workerId, selfieKey, bucket: config.buckets.mediaRaw }),
+      attendanceHandler({ task: 'geo_verify', workerId, latitude, longitude }),
+      attendanceHandler({ task: 'voice_verify', workerId, voiceTranscription: voice, language }),
+    ]);
+
+    const decision = await attendanceHandler({
+      task: 'merge_decision',
+      workerId,
+      faceResult,
+      geoResult,
+      voiceResult,
+      language,
+    });
+
+    // Send response
+    let responseText;
+    if (decision.status === 'duplicate') {
+      responseText = language === 'en'
+        ? 'Your attendance is already logged for today.'
+        : 'Aapki aaj ki attendance pehle se log ho chuki hai.';
+    } else if (decision.status === 'auto_approved') {
+      responseText = language === 'en'
+        ? `Attendance verified! Day ${decision.totalDaysLogged} logged. ${decision.daysRemaining} days remaining.${decision.certificateEligible ? ' Certificate eligible!' : ''}`
+        : `Attendance verified! Din ${decision.totalDaysLogged} log hua. ${decision.daysRemaining} din aur baaki.${decision.certificateEligible ? ' Certificate ke liye eligible!' : ''}`;
+    } else if (decision.status === 'pending_review') {
+      responseText = language === 'en'
+        ? 'Attendance submitted for admin review. You will be notified once reviewed.'
+        : 'Attendance admin review ke liye bhej di gayi hai. Review hone par aapko bataya jayega.';
+    } else {
+      responseText = language === 'en'
+        ? 'Attendance could not be verified. Please try again.'
+        : 'Attendance verify nahi ho saki. Kripya dobara koshish karein.';
+    }
+
+    await sendTextMessage(phoneNumber, responseText);
+
+    if (decision.status === 'auto_approved') {
+      const audioUrl = await generateAndUploadVoice(workerId, responseText, language, 'attendance-confirmed');
+      if (audioUrl) await sendAudioMessage(phoneNumber, audioUrl);
+      if (decision.certificateEligible) {
+        await triggerCertificateGeneration(workerId, phoneNumber, language);
+      }
+    }
+
+    return apiResponse(200, {
+      status: 'attendance_processed',
+      workerId,
+      verificationStatus: decision.status,
+      confidence: decision.confidence,
+      gpsUsed: Boolean(state.pending_latitude),
+      voiceUsed: Boolean(voiceTranscription),
+    });
+  } catch (err) {
+    console.error('Full attendance processing error:', err);
+    await sendTextMessage(phoneNumber, language === 'en'
+      ? 'Something went wrong with attendance. Please try again.'
+      : 'Attendance mein kuch problem ho gayi. Kripya dobara koshish karein.');
+    return apiResponse(200, { status: 'error', workerId, error: err.message });
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Fallback: Attendance without location (dev mode / location request unsupported)
 // ─────────────────────────────────────────────────────────
 
 async function handleAttendanceCheckIn(workerId, worker, message, language) {
